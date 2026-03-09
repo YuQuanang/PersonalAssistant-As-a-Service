@@ -1,0 +1,14 @@
+{
+  "name": "paas-task-service",
+  "version": "1.0.0",
+  "description": "Task Management Service — PAaaS dummy microservice",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0"
+  }
+}
