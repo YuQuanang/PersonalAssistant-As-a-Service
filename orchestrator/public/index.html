@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PAaaS — Personal Assistant</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='32' fill='%234f46e5'/%3E%3Ctext x='32' y='44' text-anchor='middle' font-size='36' font-family='system-ui'>🌿%3C/text%3E%3C/svg%3E">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    header {
+      width: 100%;
+      max-width: 760px;
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid #1e2433;
+    }
+
+    header h1 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #a78bfa;
+      letter-spacing: 0.02em;
+    }
+
+    header p {
+      font-size: 0.78rem;
+      color: #64748b;
+      margin-top: 2px;
+    }
+
+    #chat {
+      flex: 1;
+      width: 100%;
+      max-width: 760px;
+      overflow-y: auto;
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .bubble {
+      max-width: 82%;
+      padding: 11px 15px;
+      border-radius: 14px;
+      font-size: 0.92rem;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .bubble.user {
+      align-self: flex-end;
+      background: #4f46e5;
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+
+    .bubble.assistant {
+      align-self: flex-start;
+      background: #1e2433;
+      color: #e2e8f0;
+      border-bottom-left-radius: 4px;
+    }
+
+    .bubble.assistant.error {
+      background: #2d1b24;
+      color: #fca5a5;
+    }
+
+    .meta {
+      align-self: flex-start;
+      font-size: 0.72rem;
+      color: #475569;
+      margin-top: -10px;
+      padding-left: 4px;
+    }
+
+    .typing {
+      align-self: flex-start;
+      background: #1e2433;
+      border-radius: 14px;
+      border-bottom-left-radius: 4px;
+      padding: 13px 18px;
+      display: flex;
+      gap: 5px;
+      align-items: center;
+    }
+
+    .typing span {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #64748b;
+      animation: blink 1.2s infinite;
+    }
+    .typing span:nth-child(2) { animation-delay: 0.2s; }
+    .typing span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes blink {
+      0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
+      40%           { opacity: 1;    transform: scale(1); }
+    }
+
+    #input-row {
+      width: 100%;
+      max-width: 760px;
+      padding: 12px 20px 20px;
+      display: flex;
+      gap: 10px;
+      border-top: 1px solid #1e2433;
+    }
+
+    #msg-input {
+      flex: 1;
+      background: #1e2433;
+      border: 1px solid #2d3748;
+      border-radius: 10px;
+      color: #e2e8f0;
+      font-size: 0.93rem;
+      padding: 10px 14px;
+      resize: none;
+      outline: none;
+      transition: border-color 0.15s;
+      max-height: 140px;
+      overflow-y: auto;
+    }
+
+    #msg-input::placeholder { color: #475569; }
+    #msg-input:focus { border-color: #4f46e5; }
+
+    #send-btn {
+      background: #4f46e5;
+      border: none;
+      border-radius: 10px;
+      color: #fff;
+      cursor: pointer;
+      padding: 0 18px;
+      font-size: 1.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, opacity 0.15s;
+      flex-shrink: 0;
+    }
+
+    #send-btn:hover:not(:disabled) { background: #4338ca; }
+    #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Scrollbar */
+    #chat::-webkit-scrollbar { width: 5px; }
+    #chat::-webkit-scrollbar-track { background: transparent; }
+    #chat::-webkit-scrollbar-thumb { background: #2d3748; border-radius: 99px; }
+
+    /* Markdown rendering inside assistant bubbles */
+    .bubble.assistant p            { margin-bottom: 8px; }
+    .bubble.assistant p:last-child { margin-bottom: 0; }
+    .bubble.assistant ul,
+    .bubble.assistant ol           { padding-left: 20px; margin-bottom: 8px; }
+    .bubble.assistant li           { margin-bottom: 4px; }
+    .bubble.assistant strong       { color: #c4b5fd; font-weight: 600; }
+    .bubble.assistant em           { color: #94a3b8; }
+    .bubble.assistant code         { background: #0f1117; border-radius: 4px; padding: 1px 5px; font-size: 0.85em; color: #7dd3fc; }
+    .bubble.assistant pre          { background: #0f1117; border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin-bottom: 8px; }
+    .bubble.assistant pre code     { background: none; padding: 0; color: #e2e8f0; }
+    .bubble.assistant h1,
+    .bubble.assistant h2,
+    .bubble.assistant h3           { color: #a78bfa; margin-bottom: 6px; font-size: 1em; }
+    .bubble.assistant blockquote   { border-left: 3px solid #4f46e5; padding-left: 10px; color: #94a3b8; margin-bottom: 8px; }
+    .bubble.assistant a            { color: #7dd3fc; text-decoration: underline; }
+
+    /* Suggestion chips */
+    .suggestions {
+      align-self: flex-start;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      max-width: 82%;
+      margin-top: -6px;
+    }
+
+    .chip {
+      background: transparent;
+      border: 1px solid #2d3748;
+      border-radius: 20px;
+      color: #94a3b8;
+      cursor: pointer;
+      font-size: 0.78rem;
+      padding: 5px 12px;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+      white-space: nowrap;
+    }
+
+    .chip:hover {
+      border-color: #4f46e5;
+      color: #c4b5fd;
+      background: rgba(79, 70, 229, 0.08);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Personal Assistant</h1>
+  <p>Powered by Ollama · Calendar · Tasks · Email</p>
+</header>
+
+<div id="chat">
+  <div class="bubble assistant">
+    👋 Hi! I'm your personal assistant. I can help you with:
+    <br><br>
+    • 📅 Checking your calendar availability &amp; booking meetings<br>
+    • ✅ Viewing and creating tasks<br>
+    • 📧 Reading and summarising your emails<br>
+    <br>
+    What can I help you with today?
+  </div>
+</div>
+
+<div id="input-row">
+  <textarea id="msg-input" rows="1" placeholder="Ask me anything…" autofocus></textarea>
+  <button id="send-btn" title="Send">&#9658;</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script>
+  marked.use({ breaks: true, gfm: true });
+
+  const chat     = document.getElementById("chat");
+  const input    = document.getElementById("msg-input");
+  const sendBtn  = document.getElementById("send-btn");
+
+  // Auto-resize textarea
+  input.addEventListener("input", () => {
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 140) + "px";
+  });
+
+  // Send on Enter (Shift+Enter = newline)
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
+  });
+
+  sendBtn.addEventListener("click", send);
+
+  function appendBubble(role, text, isError = false) {
+    const div = document.createElement("div");
+    div.className = `bubble ${role}${isError ? " error" : ""}`;
+    if (role === "assistant" && !isError) {
+      // Parse markdown for assistant responses; white-space: pre-wrap is
+      // overridden by the block elements marked generates.
+      div.style.whiteSpace = "normal";
+      div.innerHTML = marked.parse(text);
+    } else {
+      // User messages and error messages stay as plain text (XSS-safe).
+      div.textContent = text;
+    }
+    chat.appendChild(div);
+    return div;
+  }
+
+  function appendSuggestions(suggestions) {
+    if (!suggestions || suggestions.length === 0) return;
+    const row = document.createElement("div");
+    row.className = "suggestions";
+    suggestions.forEach((text) => {
+      const btn = document.createElement("button");
+      btn.className = "chip";
+      btn.textContent = text;
+      btn.addEventListener("click", () => {
+        input.value = text;
+        input.style.height = "auto";
+        input.style.height = Math.min(input.scrollHeight, 140) + "px";
+        send();
+      });
+      row.appendChild(btn);
+    });
+    chat.appendChild(row);
+  }
+
+  function appendMeta(toolsUsed) {
+    if (!toolsUsed || toolsUsed.length === 0) return;
+    const div = document.createElement("div");
+    div.className = "meta";
+    div.textContent = `Tools used: ${[...new Set(toolsUsed)].join(", ")}`;
+    chat.appendChild(div);
+  }
+
+  function showTyping() {
+    const el = document.createElement("div");
+    el.className = "typing";
+    el.id = "typing-indicator";
+    el.innerHTML = "<span></span><span></span><span></span>";
+    chat.appendChild(el);
+    scrollBottom();
+    return el;
+  }
+
+  function scrollBottom() {
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  async function send() {
+    const message = input.value.trim();
+    if (!message) return;
+
+    appendBubble("user", message);
+    input.value = "";
+    input.style.height = "auto";
+    sendBtn.disabled = true;
+    scrollBottom();
+
+    const typing = showTyping();
+
+    try {
+      const res = await fetch("/api/chat", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ message }),
+      });
+
+      const data = await res.json();
+      typing.remove();
+
+      if (!res.ok) {
+        appendBubble("assistant", `⚠️ Error: ${data.error ?? "Something went wrong."}`, true);
+      } else {
+        appendBubble("assistant", data.response);
+        appendSuggestions(data.suggestions);
+        appendMeta(data.tools_used);
+
+        // Surface any partial service failures
+        if (data.errors && data.errors.length > 0) {
+          const note = data.errors
+            .map(e => `• ${e.service}: ${e.reason}`)
+            .join("\n");
+          appendBubble("assistant", `⚠️ Some services had issues:\n${note}`, true);
+        }
+      }
+    } catch (err) {
+      typing.remove();
+      appendBubble(
+        "assistant",
+        "⚠️ Could not reach the orchestrator. Make sure it's running on port 3000.",
+        true
+      );
+    }
+
+    sendBtn.disabled = false;
+    scrollBottom();
+    input.focus();
+  }
+</script>
+
+</body>
+</html>

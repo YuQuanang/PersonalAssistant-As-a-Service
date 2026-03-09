@@ -82,10 +82,7 @@ PersonalAssistant-As-a-Service/
 Run this once from the repo root:
 
 ```bash
-npm install --prefix orchestrator
-npm install --prefix services/calendar-service
-npm install --prefix services/task-service
-npm install --prefix services/email-service
+npm install && npm run install:all
 ```
 
 ### Step 2 — Pull the LLM model
@@ -104,29 +101,26 @@ ollama serve
 
 > Skip this if Ollama is already running as a background daemon.
 
-### Step 4 — Start all four services (separate terminals)
+### Step 4 — Start all four services
+
+From the repo root, run a single command:
 
 ```bash
-# Terminal 1 — Calendar Service  (port 3001)
-cd services/calendar-service && npm start
-
-# Terminal 2 — Task Service      (port 3002)
-cd services/task-service && npm start
-
-# Terminal 3 — Email Service     (port 3003)
-cd services/email-service && npm start
-
-# Terminal 4 — Orchestrator      (port 3000)
-cd orchestrator && npm start
+npm start
 ```
 
-### Step 5 — Chat with your assistant
+All four services start together in one terminal with color-coded, prefixed logs:
 
-```bash
-curl -X POST http://localhost:3000/api/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "What are my pending tasks and do I have free time tomorrow?"}'
 ```
+[calendar]     Running on http://localhost:3001
+[task]         Running on http://localhost:3002
+[email]        Running on http://localhost:3003
+[orchestrator] Running on http://localhost:3000
+[orchestrator] Chat UI → http://localhost:3000
+```
+
+> If any service crashes, all others are stopped automatically (`--kill-others-on-fail`).
+
 
 Example questions to try:
 
