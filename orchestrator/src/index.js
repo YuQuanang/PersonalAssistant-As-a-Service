@@ -1,6 +1,7 @@
 import express from "express";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
+import { exec } from "node:child_process";
 import { PORT } from "./config.js";
 import { runAgent } from "./agent.js";
 
@@ -56,6 +57,65 @@ app.post("/api/chat", async (req, res) => {
     console.error("[orchestrator] Unexpected error:", err);
     return res.status(500).json({ error: "An unexpected internal error occurred." });
   }
+});
+
+// ── GET /api/ollama-status ────────────────────────────────────────────────────
+// Returns { ready: true } when Ollama is reachable, { ready: false } otherwise.
+app.get("/api/ollama-status", async (_req, res) => {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2000);
+    const r = await fetch("http://localhost:11434/api/tags", { signal: controller.signal });
+    clearTimeout(timer);
+    return res.json({ ready: r.ok });
+  } catch {
+    return res.json({ ready: false });
+  }
+});
+
+// ── POST /api/start-ollama ────────────────────────────────────────────────────
+// Launches the Ollama macOS app.
+// Strategy:
+//  1. Kill any stale/zombie Ollama processes (leftover from a previous hard kill).
+//     Without this, the new app instance detects a stale socket and silently exits.
+//  2. Remove the stale Unix socket Ollama uses for IPC (if present).
+//  3. Open the app and, if that fails, fall back to `ollama serve` directly.
+app.post("/api/start-ollama", (req, res) => {
+  // Respond immediately — the client polls /api/ollama-status separately.
+  res.json({ message: "Ollama launch requested." });
+
+  const cleanup =
+    "pkill -f '/Applications/Ollama.app' 2>/dev/null; " +
+    "rm -f /tmp/ollama*.sock /tmp/.ollama.lock 2>/dev/null; " +
+    "sleep 0.5";
+
+  const launch =
+    "open /Applications/Ollama.app || " +
+    "(/Applications/Ollama.app/Contents/Resources/ollama serve &>/dev/null &)";
+
+  exec(`${cleanup} && ${launch}`, (err) => {
+    if (err) console.error("[orchestrator] start-ollama exec error:", err.message);
+    else      console.log("[orchestrator] Ollama launch command sent.");
+  });
+});
+
+// ── POST /api/shutdown ────────────────────────────────────────────────────────
+// Stops Ollama (works for both manual `ollama serve` and the macOS menu bar app)
+// then exits the orchestrator process, which signals concurrently to stop the
+// other three services.
+app.post("/api/shutdown", (_req, res) => {
+  res.json({ message: "Shutting down…" });
+  console.log("[orchestrator] Shutdown requested — stopping Ollama and all services.");
+  // Two Ollama processes run on macOS:
+  //  1. The menu bar GUI app:  /Applications/Ollama.app/Contents/MacOS/Ollama
+  //  2. The backend server:    .../Resources/ollama serve
+  // We kill both by matching the app bundle path, then fall back to pkill.
+  exec(
+    "pkill -f '/Applications/Ollama.app' 2>/dev/null; osascript -e 'quit app \"Ollama\"' 2>/dev/null; true",
+    () => {
+    // Give the HTTP response a moment to flush before exiting.
+    setTimeout(() => process.exit(0), 300);
+  });
 });
 
 // ── 404 catch-all ─────────────────────────────────────────────────────────────

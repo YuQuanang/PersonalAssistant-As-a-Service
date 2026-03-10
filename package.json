@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "install:all": "npm install --prefix orchestrator && npm install --prefix services/calendar-service && npm install --prefix services/task-service && npm install --prefix services/email-service",
-    "start": "concurrently --kill-others-on-fail --prefix-colors \"cyan,green,yellow,magenta\" --names \"calendar,task,email,orchestrator\" \"node services/calendar-service/src/index.js\" \"node services/task-service/src/index.js\" \"node services/email-service/src/index.js\" \"node orchestrator/src/index.js\""
+    "start": "concurrently --kill-others --prefix-colors \"cyan,green,yellow,magenta\" --names \"calendar,task,email,orchestrator\" \"node services/calendar-service/src/index.js\" \"node services/task-service/src/index.js\" \"node services/email-service/src/index.js\" \"node orchestrator/src/index.js\""
   },
   "devDependencies": {
     "concurrently": "^8.2.0"

@@ -3,366 +3,303 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PAaaS — Personal Assistant</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='32' fill='%234f46e5'/%3E%3Ctext x='32' y='44' text-anchor='middle' font-size='36' font-family='system-ui'>🌿%3C/text%3E%3C/svg%3E">
+  <title>Personal Assistant — Start</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%236c4fcf'/><text y='.9em' font-size='60' x='50%' dominant-baseline='middle' text-anchor='middle'>🌿</text></svg>" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0f1117;
-      color: #e2e8f0;
-      height: 100dvh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-
-    header {
-      width: 100%;
-      max-width: 760px;
-      padding: 18px 20px 14px;
-      border-bottom: 1px solid #1e2433;
-    }
-
-    header h1 {
-      font-size: 1.1rem;
-      font-weight: 600;
-      color: #a78bfa;
-      letter-spacing: 0.02em;
-    }
-
-    header p {
-      font-size: 0.78rem;
-      color: #64748b;
-      margin-top: 2px;
-    }
-
-    #chat {
-      flex: 1;
-      width: 100%;
-      max-width: 760px;
-      overflow-y: auto;
-      padding: 24px 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .bubble {
-      max-width: 82%;
-      padding: 11px 15px;
-      border-radius: 14px;
-      font-size: 0.92rem;
-      line-height: 1.55;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-
-    .bubble.user {
-      align-self: flex-end;
-      background: #4f46e5;
-      color: #fff;
-      border-bottom-right-radius: 4px;
-    }
-
-    .bubble.assistant {
-      align-self: flex-start;
-      background: #1e2433;
-      color: #e2e8f0;
-      border-bottom-left-radius: 4px;
-    }
-
-    .bubble.assistant.error {
-      background: #2d1b24;
-      color: #fca5a5;
-    }
-
-    .meta {
-      align-self: flex-start;
-      font-size: 0.72rem;
-      color: #475569;
-      margin-top: -10px;
-      padding-left: 4px;
-    }
-
-    .typing {
-      align-self: flex-start;
-      background: #1e2433;
-      border-radius: 14px;
-      border-bottom-left-radius: 4px;
-      padding: 13px 18px;
-      display: flex;
-      gap: 5px;
-      align-items: center;
-    }
-
-    .typing span {
-      width: 7px; height: 7px;
-      border-radius: 50%;
-      background: #64748b;
-      animation: blink 1.2s infinite;
-    }
-    .typing span:nth-child(2) { animation-delay: 0.2s; }
-    .typing span:nth-child(3) { animation-delay: 0.4s; }
-
-    @keyframes blink {
-      0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
-      40%           { opacity: 1;    transform: scale(1); }
-    }
-
-    #input-row {
-      width: 100%;
-      max-width: 760px;
-      padding: 12px 20px 20px;
-      display: flex;
-      gap: 10px;
-      border-top: 1px solid #1e2433;
-    }
-
-    #msg-input {
-      flex: 1;
-      background: #1e2433;
-      border: 1px solid #2d3748;
-      border-radius: 10px;
-      color: #e2e8f0;
-      font-size: 0.93rem;
-      padding: 10px 14px;
-      resize: none;
-      outline: none;
-      transition: border-color 0.15s;
-      max-height: 140px;
-      overflow-y: auto;
-    }
-
-    #msg-input::placeholder { color: #475569; }
-    #msg-input:focus { border-color: #4f46e5; }
-
-    #send-btn {
-      background: #4f46e5;
-      border: none;
-      border-radius: 10px;
-      color: #fff;
-      cursor: pointer;
-      padding: 0 18px;
-      font-size: 1.2rem;
+      background: #0f0f13;
+      color: #e2e2e8;
+      min-height: 100dvh;
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: background 0.15s, opacity 0.15s;
+      overflow: hidden;
+    }
+
+    /* Ambient background glow */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 60% 50% at 30% 20%, rgba(108,79,207,0.18) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 40% at 70% 80%, rgba(56,189,148,0.12) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .card {
+      position: relative;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 24px;
+      padding: 56px 48px 48px;
+      width: min(480px, calc(100vw - 40px));
+      text-align: center;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+    }
+
+    .logo {
+      font-size: 3.2rem;
+      line-height: 1;
+      margin-bottom: 20px;
+      display: block;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #f0f0f5;
+      margin-bottom: 8px;
+    }
+
+    .tagline {
+      font-size: 0.95rem;
+      color: #8888a0;
+      margin-bottom: 40px;
+      line-height: 1.5;
+    }
+
+    /* ── Start button ── */
+    #start-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: linear-gradient(135deg, #6c4fcf, #4f8ecf);
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      padding: 14px 36px;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+      box-shadow: 0 4px 24px rgba(108,79,207,0.4);
+    }
+    #start-btn:hover:not(:disabled) {
+      opacity: 0.9;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(108,79,207,0.5);
+    }
+    #start-btn:active:not(:disabled) { transform: translateY(0); }
+    #start-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+    /* ── Status area ── */
+    #status {
+      margin-top: 32px;
+      min-height: 64px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.9rem;
+      color: #9999b8;
+    }
+
+    /* Spinner */
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255,255,255,0.12);
+      border-top-color: #6c4fcf;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
       flex-shrink: 0;
     }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
-    #send-btn:hover:not(:disabled) { background: #4338ca; }
-    #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-    /* Scrollbar */
-    #chat::-webkit-scrollbar { width: 5px; }
-    #chat::-webkit-scrollbar-track { background: transparent; }
-    #chat::-webkit-scrollbar-thumb { background: #2d3748; border-radius: 99px; }
-
-    /* Markdown rendering inside assistant bubbles */
-    .bubble.assistant p            { margin-bottom: 8px; }
-    .bubble.assistant p:last-child { margin-bottom: 0; }
-    .bubble.assistant ul,
-    .bubble.assistant ol           { padding-left: 20px; margin-bottom: 8px; }
-    .bubble.assistant li           { margin-bottom: 4px; }
-    .bubble.assistant strong       { color: #c4b5fd; font-weight: 600; }
-    .bubble.assistant em           { color: #94a3b8; }
-    .bubble.assistant code         { background: #0f1117; border-radius: 4px; padding: 1px 5px; font-size: 0.85em; color: #7dd3fc; }
-    .bubble.assistant pre          { background: #0f1117; border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin-bottom: 8px; }
-    .bubble.assistant pre code     { background: none; padding: 0; color: #e2e8f0; }
-    .bubble.assistant h1,
-    .bubble.assistant h2,
-    .bubble.assistant h3           { color: #a78bfa; margin-bottom: 6px; font-size: 1em; }
-    .bubble.assistant blockquote   { border-left: 3px solid #4f46e5; padding-left: 10px; color: #94a3b8; margin-bottom: 8px; }
-    .bubble.assistant a            { color: #7dd3fc; text-decoration: underline; }
-
-    /* Suggestion chips */
-    .suggestions {
-      align-self: flex-start;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      max-width: 82%;
-      margin-top: -6px;
+    /* Progress bar */
+    .progress-track {
+      width: 100%;
+      height: 3px;
+      background: rgba(255,255,255,0.07);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #6c4fcf, #38bd94);
+      border-radius: 99px;
+      width: 0%;
+      transition: width 0.5s ease;
+    }
+    .progress-fill.indeterminate {
+      width: 40% !important;
+      animation: slide 1.4s ease-in-out infinite;
+    }
+    @keyframes slide {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(350%); }
     }
 
-    .chip {
-      background: transparent;
-      border: 1px solid #2d3748;
-      border-radius: 20px;
-      color: #94a3b8;
-      cursor: pointer;
+    /* Success / error states */
+    .status-row.success { color: #38bd94; }
+    .status-row.error   { color: #e05c5c; }
+    .status-icon { font-size: 1.1rem; }
+
+    /* Manual fallback hint */
+    .hint {
+      margin-top: 20px;
+      font-size: 0.8rem;
+      color: #55556a;
+      line-height: 1.6;
+    }
+    .hint code {
+      background: rgba(255,255,255,0.07);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-family: "SF Mono", Menlo, monospace;
       font-size: 0.78rem;
-      padding: 5px 12px;
-      transition: border-color 0.15s, color 0.15s, background 0.15s;
-      white-space: nowrap;
-    }
-
-    .chip:hover {
-      border-color: #4f46e5;
-      color: #c4b5fd;
-      background: rgba(79, 70, 229, 0.08);
     }
   </style>
 </head>
 <body>
+  <div class="card">
+    <span class="logo">🌿</span>
+    <h1>Personal Assistant</h1>
+    <p class="tagline">Your calm, AI-powered helper for tasks,<br>calendar, and email — all in one place.</p>
 
-<header>
-  <h1>Personal Assistant</h1>
-  <p>Powered by Ollama · Calendar · Tasks · Email</p>
-</header>
+    <button id="start-btn">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+      </svg>
+      Start
+    </button>
 
-<div id="chat">
-  <div class="bubble assistant">
-    👋 Hi! I'm your personal assistant. I can help you with:
-    <br><br>
-    • 📅 Checking your calendar availability &amp; booking meetings<br>
-    • ✅ Viewing and creating tasks<br>
-    • 📧 Reading and summarising your emails<br>
-    <br>
-    What can I help you with today?
+    <div id="status"></div>
   </div>
-</div>
 
-<div id="input-row">
-  <textarea id="msg-input" rows="1" placeholder="Ask me anything…" autofocus></textarea>
-  <button id="send-btn" title="Send">&#9658;</button>
-</div>
+  <script>
+    const btn    = document.getElementById('start-btn');
+    const status = document.getElementById('status');
 
-<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-<script>
-  marked.use({ breaks: true, gfm: true });
+    let pollTimer = null;
+    let pollCount = 0;
+    const POLL_INTERVAL_MS = 2000;  // 2 s between checks
+    const MAX_POLLS = 45;           // 45 × 2 s = 90 s timeout
 
-  const chat     = document.getElementById("chat");
-  const input    = document.getElementById("msg-input");
-  const sendBtn  = document.getElementById("send-btn");
-
-  // Auto-resize textarea
-  input.addEventListener("input", () => {
-    input.style.height = "auto";
-    input.style.height = Math.min(input.scrollHeight, 140) + "px";
-  });
-
-  // Send on Enter (Shift+Enter = newline)
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send();
+    function setStatus(html) {
+      status.innerHTML = html;
     }
-  });
 
-  sendBtn.addEventListener("click", send);
-
-  function appendBubble(role, text, isError = false) {
-    const div = document.createElement("div");
-    div.className = `bubble ${role}${isError ? " error" : ""}`;
-    if (role === "assistant" && !isError) {
-      // Parse markdown for assistant responses; white-space: pre-wrap is
-      // overridden by the block elements marked generates.
-      div.style.whiteSpace = "normal";
-      div.innerHTML = marked.parse(text);
-    } else {
-      // User messages and error messages stay as plain text (XSS-safe).
-      div.textContent = text;
+    function progressBar(indeterminate = true) {
+      return `<div class="progress-track">
+        <div class="progress-fill${indeterminate ? ' indeterminate' : ''}"></div>
+      </div>`;
     }
-    chat.appendChild(div);
-    return div;
-  }
 
-  function appendSuggestions(suggestions) {
-    if (!suggestions || suggestions.length === 0) return;
-    const row = document.createElement("div");
-    row.className = "suggestions";
-    suggestions.forEach((text) => {
-      const btn = document.createElement("button");
-      btn.className = "chip";
-      btn.textContent = text;
-      btn.addEventListener("click", () => {
-        input.value = text;
-        input.style.height = "auto";
-        input.style.height = Math.min(input.scrollHeight, 140) + "px";
-        send();
-      });
-      row.appendChild(btn);
-    });
-    chat.appendChild(row);
-  }
-
-  function appendMeta(toolsUsed) {
-    if (!toolsUsed || toolsUsed.length === 0) return;
-    const div = document.createElement("div");
-    div.className = "meta";
-    div.textContent = `Tools used: ${[...new Set(toolsUsed)].join(", ")}`;
-    chat.appendChild(div);
-  }
-
-  function showTyping() {
-    const el = document.createElement("div");
-    el.className = "typing";
-    el.id = "typing-indicator";
-    el.innerHTML = "<span></span><span></span><span></span>";
-    chat.appendChild(el);
-    scrollBottom();
-    return el;
-  }
-
-  function scrollBottom() {
-    chat.scrollTop = chat.scrollHeight;
-  }
-
-  async function send() {
-    const message = input.value.trim();
-    if (!message) return;
-
-    appendBubble("user", message);
-    input.value = "";
-    input.style.height = "auto";
-    sendBtn.disabled = true;
-    scrollBottom();
-
-    const typing = showTyping();
-
-    try {
-      const res = await fetch("/api/chat", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ message }),
-      });
-
-      const data = await res.json();
-      typing.remove();
-
-      if (!res.ok) {
-        appendBubble("assistant", `⚠️ Error: ${data.error ?? "Something went wrong."}`, true);
-      } else {
-        appendBubble("assistant", data.response);
-        appendSuggestions(data.suggestions);
-        appendMeta(data.tools_used);
-
-        // Surface any partial service failures
-        if (data.errors && data.errors.length > 0) {
-          const note = data.errors
-            .map(e => `• ${e.service}: ${e.reason}`)
-            .join("\n");
-          appendBubble("assistant", `⚠️ Some services had issues:\n${note}`, true);
-        }
+    async function checkOllamaReady() {
+      try {
+        const r = await fetch('/api/ollama-status');
+        const { ready } = await r.json();
+        return ready;
+      } catch {
+        return false;
       }
-    } catch (err) {
-      typing.remove();
-      appendBubble(
-        "assistant",
-        "⚠️ Could not reach the orchestrator. Make sure it's running on port 3000.",
-        true
-      );
     }
 
-    sendBtn.disabled = false;
-    scrollBottom();
-    input.focus();
-  }
-</script>
+    function startPolling(interval = 2000) {
+      pollTimer = setInterval(async () => {
+        pollCount++;
+        const ready = await checkOllamaReady();
 
+        if (ready) {
+          clearInterval(pollTimer);
+          setStatus(`
+            <div class="status-row success">
+              <span class="status-icon">✅</span>
+              <span>Ollama is ready — launching chat…</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" style="width:100%"></div>
+            </div>
+          `);
+          setTimeout(() => { window.location.href = '/chat.html'; }, 800);
+          return;
+        }
+
+        const elapsed = Math.round(pollCount * POLL_INTERVAL_MS / 1000);
+        setStatus(`
+          <div class="status-row">
+            <div class="spinner"></div>
+            <span>Waiting for Ollama… (${elapsed}s)</span>
+          </div>
+          ${progressBar()}
+        `);
+
+        if (pollCount >= MAX_POLLS) {
+          clearInterval(pollTimer);
+          btn.disabled = false;
+          btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Retry`;
+          setStatus(`
+            <div class="status-row error">
+              <span class="status-icon">⚠️</span>
+              <span>Timed out waiting for Ollama (90s).</span>
+            </div>
+            <p class="hint">
+              Try opening Ollama manually from your Applications folder,<br>
+              or run <code>ollama serve</code> in a terminal, then click Retry.
+            </p>
+          `);
+        }
+      }, interval);
+    }
+
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+
+      // First check if Ollama is already running
+      const alreadyReady = await checkOllamaReady();
+      if (alreadyReady) {
+        setStatus(`
+          <div class="status-row success">
+            <span class="status-icon">✅</span>
+            <span>Ollama already running — launching chat…</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width:100%"></div>
+          </div>
+        `);
+        setTimeout(() => { window.location.href = '/chat.html'; }, 700);
+        return;
+      }
+
+      // Ask the server to open the Ollama app
+      setStatus(`
+        <div class="status-row">
+          <div class="spinner"></div>
+          <span>Launching Ollama…</span>
+        </div>
+        ${progressBar()}
+      `);
+
+      try {
+        await fetch('/api/start-ollama', { method: 'POST' });
+      } catch {
+        // Non-fatal — still poll in case it started
+      }
+
+      setStatus(`
+        <div class="status-row">
+          <div class="spinner"></div>
+          <span>Waiting for Ollama to be ready…</span>
+        </div>
+        ${progressBar()}
+      `);
+
+      pollCount = 0;
+      startPolling(POLL_INTERVAL_MS);
+    });
+  </script>
 </body>
 </html>
