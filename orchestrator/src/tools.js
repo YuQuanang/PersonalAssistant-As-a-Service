@@ -1,5 +1,6 @@
 import axios from "axios";
 import { SERVICES, SERVICE_TIMEOUT_MS } from "./config.js";
+import { getValidAccessToken } from "./auth.js";
 
 // ── Tool schemas (Ollama / OpenAI function-calling format) ────────────────────
 export const TOOL_DEFINITIONS = [
@@ -30,9 +31,9 @@ export const TOOL_DEFINITIONS = [
         type: "object",
         properties: {
           title: { type: "string", description: "Meeting title." },
-          date:  { type: "string", description: "Date in YYYY-MM-DD format." },
+          date: { type: "string", description: "Date in YYYY-MM-DD format." },
           start: { type: "string", description: "Start time in HH:MM (24-hour)." },
-          end:   { type: "string", description: "End time in HH:MM (24-hour)." },
+          end: { type: "string", description: "End time in HH:MM (24-hour)." },
           attendees: {
             type: "array",
             items: { type: "string" },
@@ -70,9 +71,9 @@ export const TOOL_DEFINITIONS = [
       parameters: {
         type: "object",
         properties: {
-          title:       { type: "string", description: "Task title (required)." },
+          title: { type: "string", description: "Task title (required)." },
           description: { type: "string", description: "Optional additional context." },
-          due_date:    { type: "string", description: "Optional due date in YYYY-MM-DD format." },
+          due_date: { type: "string", description: "Optional due date in YYYY-MM-DD format." },
           priority: {
             type: "string",
             enum: ["low", "medium", "high"],
@@ -122,6 +123,19 @@ export const TOOL_DEFINITIONS = [
   },
 ];
 
+/**
+ * Helper to build axios config with Authorization header
+ */
+async function getAuthHeaders(credentials) {
+  try {
+    const token = await getValidAccessToken(credentials);
+    return { headers: { Authorization: `Bearer ${token}` } };
+  } catch (err) {
+    console.error("[orchestrator] Failed to get valid access token:", err.message);
+    throw new Error("Google authentication required. Please visit /api/auth/google");
+  }
+}
+
 // ── Shared HTTP client ────────────────────────────────────────────────────────
 const http = axios.create({ timeout: SERVICE_TIMEOUT_MS });
 
@@ -131,32 +145,36 @@ const http = axios.create({ timeout: SERVICE_TIMEOUT_MS });
  *
  * @param {string} name  Tool name matching a key in TOOL_DEFINITIONS
  * @param {object} args  Arguments provided by the LLM
+ * @param {object} credentials Valid Google auth tokens
  * @returns {Promise<{ success: boolean, data: any, error?: { service: string, reason: string } }>}
  */
-export async function dispatchTool(name, args = {}) {
+export async function dispatchTool(name, args = {}, credentials) {
   try {
+    const authConfig = await getAuthHeaders(credentials);
+
     switch (name) {
       case "check_calendar_availability": {
         const { data } = await http.get(
           `${SERVICES.calendar}/api/availability`,
-          { params: { date: args.date } }
+          { ...authConfig, params: { date: args.date } }
         );
         return { success: true, data };
       }
 
       case "book_meeting": {
         const { data } = await http.post(`${SERVICES.calendar}/api/meetings`, {
-          title:     args.title,
-          date:      args.date,
-          start:     args.start,
-          end:       args.end,
+          title: args.title,
+          date: args.date,
+          start: args.start,
+          end: args.end,
           attendees: Array.isArray(args.attendees) ? args.attendees : [],
-        });
+        }, authConfig);
         return { success: true, data };
       }
 
       case "get_tasks": {
         const { data } = await http.get(`${SERVICES.task}/api/tasks`, {
+          ...authConfig,
           params: { status: args.status ?? "pending" },
         });
         return { success: true, data };
@@ -164,16 +182,17 @@ export async function dispatchTool(name, args = {}) {
 
       case "create_task": {
         const { data } = await http.post(`${SERVICES.task}/api/tasks`, {
-          title:       args.title,
+          title: args.title,
           description: args.description ?? "",
-          due_date:    args.due_date,
-          priority:    args.priority ?? "medium",
-        });
+          due_date: args.due_date,
+          priority: args.priority ?? "medium",
+        }, authConfig);
         return { success: true, data };
       }
 
       case "get_emails": {
         const { data } = await http.get(`${SERVICES.email}/api/emails`, {
+          ...authConfig,
           params: { filter: args.filter ?? "unread" },
         });
         return { success: true, data };
@@ -182,7 +201,8 @@ export async function dispatchTool(name, args = {}) {
       case "summarize_email": {
         const { data } = await http.post(
           `${SERVICES.email}/api/emails/summarize`,
-          { email_id: args.email_id }
+          { email_id: args.email_id },
+          authConfig
         );
         return { success: true, data };
       }
@@ -190,13 +210,13 @@ export async function dispatchTool(name, args = {}) {
       default:
         return {
           success: false,
-          data:    null,
-          error:   { service: "orchestrator", reason: `Unknown tool: "${name}".` },
+          data: null,
+          error: { service: "orchestrator", reason: `Unknown tool: "${name}".` },
         };
     }
   } catch (err) {
     const service = resolveServiceName(name);
-    const reason  = buildErrorReason(err);
+    const reason = buildErrorReason(err);
     console.error(`[orchestrator] Tool "${name}" failed — ${reason}`);
     return { success: false, data: null, error: { service, reason } };
   }
