@@ -42,6 +42,7 @@ You have access to three services via tools:
  * Run the Ollama agent loop for a single user turn.
  *
  * @param {string} userMessage
+ * @param {object} credentials   Google OAuth token object
  * @param {string} [sessionId]
  * @returns {Promise<{
  *   response:   string,
@@ -49,7 +50,7 @@ You have access to three services via tools:
  *   errors:     Array<{ service: string, reason: string }>
  * }>}
  */
-export async function runAgent(userMessage, sessionId) {
+export async function runAgent(userMessage, credentials, sessionId) {
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user",   content: userMessage },
@@ -106,7 +107,7 @@ export async function runAgent(userMessage, sessionId) {
 
         toolsUsed.push(name);
 
-        const result = await dispatchTool(name, args);
+        const result = await dispatchTool(name, args, credentials);
 
         if (!result.success && result.error) {
           const duplicate = errors.some(

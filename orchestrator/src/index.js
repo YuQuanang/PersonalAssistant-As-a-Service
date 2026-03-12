@@ -1,17 +1,58 @@
 import express from "express";
+import cookieParser from "cookie-parser";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 import { exec } from "node:child_process";
 import { PORT } from "./config.js";
 import { runAgent } from "./agent.js";
+import { getAuthUrl, exchangeCodeForTokens } from "./auth.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 app.use(express.json());
+app.use(cookieParser());
 
 // ── Chat UI (static) ──────────────────────────────────────────────────────────
 app.use(express.static(join(__dirname, "../public")));
+
+// ── Authentication ────────────────────────────────────────────────────────────
+
+// Redirects the user to Google's consent screen
+app.get("/api/auth/google", (req, res) => {
+  const url = getAuthUrl();
+  res.redirect(url);
+});
+
+// Check if the user has authenticated
+app.get("/api/auth/status", (req, res) => {
+  const hasToken = !!req.cookies.google_auth_tokens;
+  res.json({ authenticated: hasToken });
+});
+
+// Handles the callback from Google after the user grants consent
+app.get("/api/auth/google/callback", async (req, res) => {
+  const code = req.query.code;
+  if (!code) {
+    return res.status(400).send("No code provided.");
+  }
+
+  try {
+    const tokens = await exchangeCodeForTokens(code);
+    
+    // Store the tokens securely in a server-only cookie
+    res.cookie("google_auth_tokens", JSON.stringify(tokens), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+    });
+
+    res.redirect("/");
+  } catch (err) {
+    console.error("[auth] Callback error:", err.message);
+    res.status(500).send("Authentication failed.");
+  }
+});
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get("/health", (_req, res) =>
@@ -26,9 +67,20 @@ app.post("/api/chat", async (req, res) => {
     return res.status(400).json({ error: "Missing required field: message." });
   }
 
+  // Get tokens from cookie
+  let credentials;
+  try {
+    if (req.cookies.google_auth_tokens) {
+      credentials = JSON.parse(req.cookies.google_auth_tokens);
+    }
+  } catch (e) {
+    console.error("Failed to parse auth cookies");
+  }
+
   try {
     const { response, tools_used, errors } = await runAgent(
       message.trim(),
+      credentials,
       session_id
     );
 
@@ -50,7 +102,7 @@ app.post("/api/chat", async (req, res) => {
     if (err.message?.startsWith("LLM unavailable")) {
       return res.status(503).json({
         error: err.message,
-        hint:  "Make sure Ollama is running: ollama serve",
+        hint: "Make sure Ollama is running: ollama serve",
       });
     }
 
@@ -95,7 +147,7 @@ app.post("/api/start-ollama", (req, res) => {
 
   exec(`${cleanup} && ${launch}`, (err) => {
     if (err) console.error("[orchestrator] start-ollama exec error:", err.message);
-    else      console.log("[orchestrator] Ollama launch command sent.");
+    else console.log("[orchestrator] Ollama launch command sent.");
   });
 });
 
@@ -113,9 +165,9 @@ app.post("/api/shutdown", (_req, res) => {
   exec(
     "pkill -f '/Applications/Ollama.app' 2>/dev/null; osascript -e 'quit app \"Ollama\"' 2>/dev/null; true",
     () => {
-    // Give the HTTP response a moment to flush before exiting.
-    setTimeout(() => process.exit(0), 300);
-  });
+      // Give the HTTP response a moment to flush before exiting.
+      setTimeout(() => process.exit(0), 300);
+    });
 });
 
 // ── 404 catch-all ─────────────────────────────────────────────────────────────
