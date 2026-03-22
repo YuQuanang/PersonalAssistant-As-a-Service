@@ -1,0 +1,82 @@
+ .inputRow {
+  width: 100%;
+  max-width: 760px;
+  padding: 12px 20px 20px;
+  display: flex;
+  gap: 10px;
+  border-top: 1px solid #1e2433;
+  position: sticky;
+  bottom: 0;
+  background: #0f1117;
+}
+
+.input {
+  flex: 1;
+  background: #1e2433;
+  border: 1px solid #2d3748;
+  border-radius: 10px;
+  color: #e2e8f0;
+  font-size: 0.93rem;
+  padding: 12px 14px;
+  resize: none;
+  outline: none;
+  min-height: 64px;
+  max-height: 140px;
+  overflow-y: auto;
+  transition: border-color 0.15s;
+}
+
+.input::-webkit-scrollbar {
+  width: 5px;
+}
+
+.input::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.input::-webkit-scrollbar-thumb {
+  background: #2d3748;
+  border-radius: 99px;
+}
+
+.input::placeholder {
+  color: #475569;
+}
+
+.input:focus {
+  border-color: #4f46e5;
+}
+
+.sendBtn {
+  background: #4f46e5;
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  cursor: pointer;
+  padding: 0 18px;
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.sendBtn:hover:not(:disabled) {
+  background: #4338ca;
+}
+
+.cancelBtn {
+  background: #7f1d1d;
+  font-size: 0.9rem;
+  padding: 0 14px;
+}
+
+.cancelBtn:hover:not(:disabled) {
+  background: #991b1b;
+}
+
+.sendBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

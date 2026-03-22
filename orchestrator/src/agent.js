@@ -57,6 +57,7 @@ You have access to three services via tools:
 10. When user asks for unread emails, report total_unread and show only the latest 10 unread emails returned in emails.
 11. If get_emails fails or times out, do not fabricate any email list or sender names. State that retrieval failed and ask to retry.
 12. For summarize_email results, base the summary only on tool fields (subject, from, received_at/date_header, snippet, summary/body_text). Do not invent details.
+13. If any email total field says "more than 100", explicitly phrase it as "you have more than 100 [read/unread/all] emails".
 
 `;
 

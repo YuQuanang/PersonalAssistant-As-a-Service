@@ -1,0 +1,36 @@
+ .wrap {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.card {
+  width: 100%;
+  max-width: 420px;
+  background: #1a2131;
+  border: 1px solid #2d3748;
+  border-radius: 16px;
+  padding: 24px;
+}
+
+.title {
+  margin: 0;
+  color: #e2e8f0;
+}
+
+.text {
+  color: #94a3b8;
+}
+
+.btn {
+  margin-top: 16px;
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  background: #4f46e5;
+  color: #fff;
+  padding: 10px 14px;
+  cursor: pointer;
+}

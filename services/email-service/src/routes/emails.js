@@ -64,7 +64,7 @@ async function getCappedMessageCount(gmail, scope = "all", cap = 100) {
   return {
     count,
     capped,
-    display: capped ? `${cap}+` : count,
+    display: capped ? `more than ${cap}` : count,
   };
 }
 
@@ -82,7 +82,7 @@ router.get("/", async (req, res) => {
     const gmail = getGmailClient(req);
 
     // Fast count snapshots with hard cap at 100.
-    // If there are more than 100 matches, we return "100+".
+    // If there are more than 100 matches, we return "more than 100".
     const [allCount, unreadCount, readCount] = await Promise.all([
       getCappedMessageCount(gmail, "all", 100),
       getCappedMessageCount(gmail, "unread", 100),

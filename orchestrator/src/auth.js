@@ -31,6 +31,9 @@ export function getAuthUrl(options = {}) {
         returnTo: typeof options.returnTo === "string" && options.returnTo.startsWith("/")
             ? options.returnTo
             : "/",
+        returnOrigin: typeof options.returnOrigin === "string"
+            ? options.returnOrigin
+            : null,
     });
     const state = Buffer.from(statePayload).toString("base64url");
 
@@ -49,19 +52,22 @@ export function getAuthUrl(options = {}) {
 
 export function parseAuthState(state) {
     if (!state || typeof state !== "string") {
-        return { returnTo: "/" };
+        return { returnTo: "/", returnOrigin: null };
     }
 
     try {
         const parsed = JSON.parse(Buffer.from(state, "base64url").toString("utf8"));
         if (parsed && typeof parsed.returnTo === "string" && parsed.returnTo.startsWith("/")) {
-            return { returnTo: parsed.returnTo };
+            return {
+                returnTo: parsed.returnTo,
+                returnOrigin: typeof parsed.returnOrigin === "string" ? parsed.returnOrigin : null,
+            };
         }
     } catch {
         // Ignore malformed state and use default fallback.
     }
 
-    return { returnTo: "/" };
+    return { returnTo: "/", returnOrigin: null };
 }
 
 /**

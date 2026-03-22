@@ -13,6 +13,78 @@ import {
 } from "./auth.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const DEFAULT_FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN ?? "http://localhost:5173";
+
+function parseOrigin(value) {
+  try {
+    return new URL(String(value)).origin;
+  } catch {
+    return null;
+  }
+}
+
+function getAllowedFrontendOrigins() {
+  const configured = String(process.env.ALLOWED_FRONTEND_ORIGINS ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return new Set([
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    DEFAULT_FRONTEND_ORIGIN,
+    ...configured,
+  ]);
+}
+
+function isAllowedFrontendOrigin(origin) {
+  if (!origin || typeof origin !== "string") return false;
+  const parsedOrigin = parseOrigin(origin);
+  if (!parsedOrigin) return false;
+  return getAllowedFrontendOrigins().has(parsedOrigin);
+}
+
+function getSafeReturnTo(rawValue) {
+  return typeof rawValue === "string" && rawValue.startsWith("/") ? rawValue : "/";
+}
+
+function detectFrontendOrigin(req) {
+  const candidates = [];
+
+  if (typeof req.query.return_origin === "string") {
+    candidates.push(req.query.return_origin);
+  }
+
+  if (typeof req.headers.origin === "string") {
+    candidates.push(req.headers.origin);
+  }
+
+  if (typeof req.headers.referer === "string") {
+    const refererOrigin = parseOrigin(req.headers.referer);
+    if (refererOrigin) candidates.push(refererOrigin);
+  }
+
+  if (typeof req.headers["x-forwarded-host"] === "string") {
+    const host = req.headers["x-forwarded-host"].split(",")[0].trim();
+    const protoHeader = req.headers["x-forwarded-proto"];
+    const proto = typeof protoHeader === "string"
+      ? protoHeader.split(",")[0].trim()
+      : "http";
+    candidates.push(`${proto}://${host}`);
+  }
+
+  for (const candidate of candidates) {
+    if (isAllowedFrontendOrigin(candidate)) {
+      return parseOrigin(candidate);
+    }
+  }
+
+  return isAllowedFrontendOrigin(DEFAULT_FRONTEND_ORIGIN)
+    ? parseOrigin(DEFAULT_FRONTEND_ORIGIN)
+    : "http://localhost:5173";
+}
 
 function buildAuthCookieOptions(req) {
   const isProd = process.env.NODE_ENV === "production";
@@ -40,21 +112,17 @@ app.use(express.static(join(__dirname, "../public")));
 // Redirects the user to Google's consent screen
 app.get("/api/auth/google", (req, res) => {
   const selectAccount = req.query.select_account === "1";
-  const returnTo =
-    typeof req.query.return_to === "string" && req.query.return_to.startsWith("/")
-      ? req.query.return_to
-      : "/";
-  const url = getAuthUrl({ selectAccount, returnTo });
+  const returnTo = getSafeReturnTo(req.query.return_to);
+  const returnOrigin = detectFrontendOrigin(req);
+  const url = getAuthUrl({ selectAccount, returnTo, returnOrigin });
   res.redirect(url);
 });
 
 // Shortcut route to always force account chooser
 app.get("/api/auth/google/switch", (req, res) => {
-  const returnTo =
-    typeof req.query.return_to === "string" && req.query.return_to.startsWith("/")
-      ? req.query.return_to
-      : "/";
-  const url = getAuthUrl({ selectAccount: true, returnTo });
+  const returnTo = getSafeReturnTo(req.query.return_to);
+  const returnOrigin = detectFrontendOrigin(req);
+  const url = getAuthUrl({ selectAccount: true, returnTo, returnOrigin });
   res.redirect(url);
 });
 
@@ -110,7 +178,7 @@ app.post("/api/auth/logout", (req, res) => {
 // Handles the callback from Google after the user grants consent
 app.get("/api/auth/google/callback", async (req, res) => {
   const code = req.query.code;
-  const { returnTo } = parseAuthState(req.query.state);
+  const { returnTo, returnOrigin } = parseAuthState(req.query.state);
   if (!code) {
     return res.status(400).send("No code provided.");
   }
@@ -122,7 +190,13 @@ app.get("/api/auth/google/callback", async (req, res) => {
     // Store the tokens securely in a server-only cookie
     res.cookie("google_auth_tokens", JSON.stringify(tokens), cookieOptions);
 
-    res.redirect(returnTo);
+    const safeReturnTo = getSafeReturnTo(returnTo);
+    const safeReturnOrigin = isAllowedFrontendOrigin(returnOrigin)
+      ? parseOrigin(returnOrigin)
+      : detectFrontendOrigin(req);
+    const redirectUrl = new URL(safeReturnTo, `${safeReturnOrigin}/`).toString();
+
+    res.redirect(redirectUrl);
   } catch (err) {
     console.error("[auth] Callback error:", err.message);
     res.status(500).send("Authentication failed.");
