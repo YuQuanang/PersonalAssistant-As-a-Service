@@ -220,6 +220,156 @@
     }
     #shutdown-btn:hover { border-color: #f87171; color: #f87171; background: rgba(248,113,113,0.07); }
     #shutdown-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      position: relative;
+    }
+
+    #account-owner {
+      max-width: 180px;
+      font-size: 0.78rem;
+      color: #cbd5e1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #account-owner.muted {
+      color: #64748b;
+    }
+
+    #account-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      border: 1px solid #2d3748;
+      background: #151b29;
+      color: #e2e8f0;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+
+    #account-btn:hover {
+      border-color: #60a5fa;
+      background: #1b2334;
+    }
+
+    .avatar-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+
+    .avatar-fallback {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: #cbd5e1;
+      user-select: none;
+    }
+
+    #account-menu {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      min-width: 280px;
+      background: #131926;
+      border: 1px solid #2d3748;
+      border-radius: 14px;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+      padding: 10px;
+      display: none;
+      z-index: 10;
+    }
+
+    #account-menu.open {
+      display: block;
+    }
+
+    .menu-item {
+      width: 100%;
+      text-align: left;
+      background: #1a2131;
+      border: none;
+      color: #e2e8f0;
+      padding: 9px 10px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      margin-top: 6px;
+    }
+
+    .menu-item:hover {
+      background: #242f45;
+      color: #ffffff;
+    }
+
+    .menu-sep {
+      border-top: 1px solid #2d3748;
+      margin: 6px 0;
+    }
+
+    .menu-label {
+      font-size: 0.76rem;
+      color: #94a3b8;
+      padding: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .account-card {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 4px 2px 8px;
+    }
+
+    .account-avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 999px;
+      border: 1px solid #2d3748;
+      background: #1b2334;
+      overflow: hidden;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #cbd5e1;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .account-meta {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .account-name {
+      font-size: 0.82rem;
+      color: #f1f5f9;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .account-email {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
@@ -230,7 +380,27 @@
       <h1>Personal Assistant</h1>
       <p>Powered by Ollama · Calendar · Tasks · Email</p>
     </div>
-    <button id="shutdown-btn" title="Stop all services and quit Ollama">⏻ Shut down</button>
+    <div class="header-actions">
+      <button id="account-btn" title="Google account" aria-label="Google account menu">
+        <img id="account-avatar-img" class="avatar-img" alt="Google profile" />
+        <span id="account-avatar-fallback" class="avatar-fallback">G</span>
+      </button>
+      <span id="account-owner" class="muted">Not signed in</span>
+      <div id="account-menu" aria-hidden="true">
+        <div class="account-card">
+          <div id="menu-avatar" class="account-avatar">G</div>
+          <div class="account-meta">
+            <div id="account-name" class="account-name">Google account</div>
+            <div id="account-label" class="account-email">Not signed in</div>
+          </div>
+        </div>
+        <div class="menu-sep"></div>
+        <button id="signin-btn" class="menu-item">Sign in with Google</button>
+        <button id="switch-btn" class="menu-item">Switch account</button>
+        <button id="signout-btn" class="menu-item">Sign out</button>
+      </div>
+      <button id="shutdown-btn" title="Stop all services and quit Ollama">⏻ Shut down</button>
+    </div>
   </div>
 </header>
 
@@ -259,6 +429,161 @@
   const input    = document.getElementById("msg-input");
   const sendBtn     = document.getElementById("send-btn");
   const shutdownBtn = document.getElementById("shutdown-btn");
+  const accountBtn = document.getElementById("account-btn");
+  const accountOwner = document.getElementById("account-owner");
+  const accountAvatarImg = document.getElementById("account-avatar-img");
+  const accountAvatarFallback = document.getElementById("account-avatar-fallback");
+  const accountMenu = document.getElementById("account-menu");
+  const accountName = document.getElementById("account-name");
+  const accountLabel = document.getElementById("account-label");
+  const menuAvatar = document.getElementById("menu-avatar");
+  const signInBtn = document.getElementById("signin-btn");
+  const switchBtn = document.getElementById("switch-btn");
+  const signOutBtn = document.getElementById("signout-btn");
+
+  const SESSION_KEY = "paas_session_id";
+  let sessionId = sessionStorage.getItem(SESSION_KEY);
+  if (!sessionId) {
+    sessionId = crypto.randomUUID();
+    sessionStorage.setItem(SESSION_KEY, sessionId);
+  }
+
+  function clearSessionInBrowser() {
+    sessionStorage.removeItem(SESSION_KEY);
+    sessionId = null;
+  }
+
+  function endSessionWithBeacon() {
+    if (!sessionId) return;
+    const body = JSON.stringify({ session_id: sessionId });
+    navigator.sendBeacon(
+      "/api/chat/session/end",
+      new Blob([body], { type: "application/json" })
+    );
+    clearSessionInBrowser();
+  }
+
+  window.addEventListener("pagehide", endSessionWithBeacon);
+
+  function openAccountMenu() {
+    accountMenu.classList.add("open");
+    accountMenu.setAttribute("aria-hidden", "false");
+  }
+
+  function closeAccountMenu() {
+    accountMenu.classList.remove("open");
+    accountMenu.setAttribute("aria-hidden", "true");
+  }
+
+  accountBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (accountMenu.classList.contains("open")) closeAccountMenu();
+    else openAccountMenu();
+  });
+
+  accountMenu.addEventListener("click", (e) => e.stopPropagation());
+  document.addEventListener("click", () => closeAccountMenu());
+
+  function getInitials(nameOrEmail = "") {
+    const text = String(nameOrEmail).trim();
+    if (!text) return "G";
+
+    const parts = text.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
+    }
+    return (parts[0][0] || text[0] || "G").toUpperCase();
+  }
+
+  function setAvatar(pictureUrl, initials) {
+    const safeInitials = initials || "G";
+
+    if (pictureUrl) {
+      accountAvatarImg.src = pictureUrl;
+      accountAvatarImg.style.display = "block";
+      accountAvatarFallback.style.display = "none";
+      menuAvatar.style.backgroundImage = `url(${pictureUrl})`;
+      menuAvatar.style.backgroundSize = "cover";
+      menuAvatar.style.backgroundPosition = "center";
+      menuAvatar.textContent = "";
+      return;
+    }
+
+    accountAvatarImg.removeAttribute("src");
+    accountAvatarImg.style.display = "none";
+    accountAvatarFallback.style.display = "inline";
+    accountAvatarFallback.textContent = safeInitials;
+    menuAvatar.style.backgroundImage = "none";
+    menuAvatar.textContent = safeInitials;
+  }
+
+  async function refreshAuthProfile() {
+    try {
+      const res = await fetch("/api/auth/profile", { cache: "no-store" });
+      const data = await res.json();
+
+      if (data.authenticated) {
+        const email = data.email || "Signed in";
+        const fallbackName = data.email ? String(data.email).split("@")[0] : "Google account";
+        const name = data.name || fallbackName;
+        accountName.textContent = name;
+        accountLabel.textContent = email;
+        accountOwner.textContent = name;
+        accountOwner.classList.remove("muted");
+        setAvatar(data.picture, getInitials(name || email));
+        accountBtn.title = `Google account: ${email}`;
+        signInBtn.style.display = "none";
+        switchBtn.style.display = "block";
+        signOutBtn.style.display = "block";
+      } else {
+        accountName.textContent = "Google account";
+        accountLabel.textContent = "Not signed in";
+        accountOwner.textContent = "Not signed in";
+        accountOwner.classList.add("muted");
+        setAvatar(null, "G");
+        accountBtn.title = "Google account: not signed in";
+        signInBtn.style.display = "block";
+        switchBtn.style.display = "none";
+        signOutBtn.style.display = "none";
+      }
+    } catch {
+      accountName.textContent = "Google account";
+      accountLabel.textContent = "Unable to load account status";
+      accountOwner.textContent = "Account unavailable";
+      accountOwner.classList.add("muted");
+      setAvatar(null, "!");
+      accountBtn.title = "Google account unavailable";
+      signInBtn.style.display = "block";
+      switchBtn.style.display = "none";
+      signOutBtn.style.display = "none";
+    }
+  }
+
+  function currentPagePath() {
+    return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  }
+
+  signInBtn.addEventListener("click", () => {
+    const returnTo = encodeURIComponent(currentPagePath());
+    window.location.href = `/api/auth/google?return_to=${returnTo}`;
+  });
+
+  switchBtn.addEventListener("click", () => {
+    const returnTo = encodeURIComponent(currentPagePath());
+    window.location.href = `/api/auth/google/switch?return_to=${returnTo}`;
+  });
+
+  signOutBtn.addEventListener("click", async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      closeAccountMenu();
+      await refreshAuthProfile();
+    } catch {
+      appendBubble("assistant", "⚠️ Failed to sign out of Google. Please try again.", true);
+    }
+  });
+
+  refreshAuthProfile();
 
   shutdownBtn.addEventListener("click", async () => {
     const confirmed = window.confirm(
@@ -270,6 +595,12 @@
     shutdownBtn.textContent = "Shutting down…";
 
     try {
+      await fetch("/api/chat/session/end", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+      clearSessionInBrowser();
       await fetch("/api/shutdown", { method: "POST" });
     } catch {
       // Expected — the server closes the connection as it shuts down.
@@ -378,11 +709,16 @@
       const res = await fetch("/api/chat", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ message }),
+        body:    JSON.stringify({ message, session_id: sessionId }),
       });
 
       const data = await res.json();
       typing.remove();
+
+      if (data?.session_id && typeof data.session_id === "string") {
+        sessionId = data.session_id;
+        sessionStorage.setItem(SESSION_KEY, sessionId);
+      }
 
       if (!res.ok) {
         appendBubble("assistant", `⚠️ Error: ${data.error ?? "Something went wrong."}`, true);

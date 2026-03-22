@@ -4,10 +4,29 @@ import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 import { exec } from "node:child_process";
 import { PORT } from "./config.js";
-import { runAgent } from "./agent.js";
-import { getAuthUrl, exchangeCodeForTokens } from "./auth.js";
+import { runAgent, endSession } from "./agent.js";
+import {
+  getAuthUrl,
+  exchangeCodeForTokens,
+  getGoogleProfile,
+  parseAuthState,
+} from "./auth.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+function buildAuthCookieOptions(req) {
+  const isProd = process.env.NODE_ENV === "production";
+  const forwardedProto = req.headers["x-forwarded-proto"];
+  const isHttps = req.secure || forwardedProto === "https";
+
+  return {
+    httpOnly: true,
+    secure: isProd ? isHttps : false,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 30 * 24 * 60 * 60 * 1000,
+  };
+}
 
 const app = express();
 app.use(express.json());
@@ -20,34 +39,90 @@ app.use(express.static(join(__dirname, "../public")));
 
 // Redirects the user to Google's consent screen
 app.get("/api/auth/google", (req, res) => {
-  const url = getAuthUrl();
+  const selectAccount = req.query.select_account === "1";
+  const returnTo =
+    typeof req.query.return_to === "string" && req.query.return_to.startsWith("/")
+      ? req.query.return_to
+      : "/";
+  const url = getAuthUrl({ selectAccount, returnTo });
+  res.redirect(url);
+});
+
+// Shortcut route to always force account chooser
+app.get("/api/auth/google/switch", (req, res) => {
+  const returnTo =
+    typeof req.query.return_to === "string" && req.query.return_to.startsWith("/")
+      ? req.query.return_to
+      : "/";
+  const url = getAuthUrl({ selectAccount: true, returnTo });
   res.redirect(url);
 });
 
 // Check if the user has authenticated
 app.get("/api/auth/status", (req, res) => {
+  res.set("Cache-Control", "no-store");
   const hasToken = !!req.cookies.google_auth_tokens;
   res.json({ authenticated: hasToken });
+});
+
+// Returns current signed-in account profile
+app.get("/api/auth/profile", async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  let credentials;
+  try {
+    if (req.cookies.google_auth_tokens) {
+      credentials = JSON.parse(req.cookies.google_auth_tokens);
+    }
+  } catch {
+    return res.status(200).json({ authenticated: false });
+  }
+
+  if (!credentials) {
+    return res.status(200).json({ authenticated: false });
+  }
+
+  try {
+    const profile = await getGoogleProfile(credentials);
+    return res.status(200).json({ authenticated: true, ...profile });
+  } catch (err) {
+    console.error("[auth] Profile error:", err.message);
+    return res.status(200).json({
+      authenticated: true,
+      email: null,
+      name: null,
+      picture: null,
+    });
+  }
+});
+
+// Clear signed-in account from cookie
+app.post("/api/auth/logout", (req, res) => {
+  const cookieOptions = buildAuthCookieOptions(req);
+  res.clearCookie("google_auth_tokens", {
+    httpOnly: cookieOptions.httpOnly,
+    secure: cookieOptions.secure,
+    sameSite: cookieOptions.sameSite,
+    path: cookieOptions.path,
+  });
+  res.status(200).json({ success: true });
 });
 
 // Handles the callback from Google after the user grants consent
 app.get("/api/auth/google/callback", async (req, res) => {
   const code = req.query.code;
+  const { returnTo } = parseAuthState(req.query.state);
   if (!code) {
     return res.status(400).send("No code provided.");
   }
 
   try {
     const tokens = await exchangeCodeForTokens(code);
+    const cookieOptions = buildAuthCookieOptions(req);
     
     // Store the tokens securely in a server-only cookie
-    res.cookie("google_auth_tokens", JSON.stringify(tokens), {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
-    });
+    res.cookie("google_auth_tokens", JSON.stringify(tokens), cookieOptions);
 
-    res.redirect("/");
+    res.redirect(returnTo);
   } catch (err) {
     console.error("[auth] Callback error:", err.message);
     res.status(500).send("Authentication failed.");
@@ -78,7 +153,7 @@ app.post("/api/chat", async (req, res) => {
   }
 
   try {
-    const { response, tools_used, errors } = await runAgent(
+    const { session_id: resolvedSessionId, response, tools_used, errors } = await runAgent(
       message.trim(),
       credentials,
       session_id
@@ -86,7 +161,7 @@ app.post("/api/chat", async (req, res) => {
 
     const payload = {
       response,
-      session_id: session_id ?? null,
+      session_id: resolvedSessionId,
       tools_used,
       suggestions: generateSuggestions(tools_used),
     };
@@ -109,6 +184,14 @@ app.post("/api/chat", async (req, res) => {
     console.error("[orchestrator] Unexpected error:", err);
     return res.status(500).json({ error: "An unexpected internal error occurred." });
   }
+});
+
+// ── POST /api/chat/session/end ───────────────────────────────────────────────
+// Clears one in-memory chat session so old context does not consume memory.
+app.post("/api/chat/session/end", (req, res) => {
+  const { session_id } = req.body ?? {};
+  const cleared = endSession(session_id);
+  return res.status(200).json({ cleared });
 });
 
 // ── GET /api/ollama-status ────────────────────────────────────────────────────

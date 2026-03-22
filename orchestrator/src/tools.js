@@ -89,13 +89,13 @@ export const TOOL_DEFINITIONS = [
     function: {
       name: "get_emails",
       description:
-        'Fetch emails. Use filter "unread" for unread messages only, or "all" for all emails.',
+        'Fetch emails. Use filter "unread" for unread messages, "read" for read messages, or "all" for all emails.',
       parameters: {
         type: "object",
         properties: {
           filter: {
             type: "string",
-            enum: ["unread", "all"],
+            enum: ["unread", "read", "all"],
             description: "Filter by read status. Defaults to unread.",
           },
         },
@@ -108,16 +108,20 @@ export const TOOL_DEFINITIONS = [
     function: {
       name: "summarize_email",
       description:
-        "Get a plain-language summary of a specific email by its ID. First call get_emails to obtain valid IDs.",
+        "Get a plain-language summary of a specific email. Prefer a real email_id from get_emails. If user refers by order (e.g. 1st/8th), pass email_index as a 1-based position.",
       parameters: {
         type: "object",
         properties: {
           email_id: {
             type: "string",
-            description: "The ID of the email to summarize (e.g. email_001).",
+            description: "The Gmail message ID of the email to summarize.",
+          },
+          email_index: {
+            type: "integer",
+            description: "Optional 1-based position within the latest unread email list (e.g. 1 means first unread email).",
           },
         },
-        required: ["email_id"],
+        required: [],
       },
     },
   },
@@ -138,6 +142,7 @@ async function getAuthHeaders(credentials) {
 
 // ── Shared HTTP client ────────────────────────────────────────────────────────
 const http = axios.create({ timeout: SERVICE_TIMEOUT_MS });
+const EMAIL_TOOL_TIMEOUT_MS = parseInt(process.env.EMAIL_TOOL_TIMEOUT_MS ?? "15000", 10);
 
 /**
  * Execute a named tool against the appropriate downstream service.
@@ -193,6 +198,7 @@ export async function dispatchTool(name, args = {}, credentials) {
       case "get_emails": {
         const { data } = await http.get(`${SERVICES.email}/api/emails`, {
           ...authConfig,
+          timeout: EMAIL_TOOL_TIMEOUT_MS,
           params: { filter: args.filter ?? "unread" },
         });
         return { success: true, data };
@@ -202,7 +208,7 @@ export async function dispatchTool(name, args = {}, credentials) {
         const { data } = await http.post(
           `${SERVICES.email}/api/emails/summarize`,
           { email_id: args.email_id },
-          authConfig
+          { ...authConfig, timeout: EMAIL_TOOL_TIMEOUT_MS }
         );
         return { success: true, data };
       }
