@@ -152,6 +152,14 @@ cp orchestrator/.env.example orchestrator/.env
 | `TASK_SERVICE_URL` | `http://localhost:3002` | Task service base URL |
 | `EMAIL_SERVICE_URL` | `http://localhost:3003` | Email service base URL |
 
+Task service behavior can be configured with environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `TASKS_SOURCE` | `google` | Task backend to use: `google` or `dummy` |
+| `TASKS_FALLBACK_TO_DUMMY` | `true` | If `true`, task-service falls back to in-memory tasks when Google Tasks auth/API calls fail |
+| `GOOGLE_TASKLIST_ID` | `@default` | Google Task List ID used for read/write |
+
 ## Smoke Tests
 
 ```bash

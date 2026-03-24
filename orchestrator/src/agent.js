@@ -15,6 +15,7 @@ const MAX_SESSION_MESSAGES = MAX_SESSION_INTERACTIONS * 2;
 // Expire inactive sessions after 30 minutes to free memory.
 const SESSION_TTL_MS = parseInt(process.env.SESSION_TTL_MS ?? "1800000", 10);
 const sessionStore = new Map();
+const taskDraftStore = new Map();
 const VALID_TOOL_NAMES = new Set(TOOL_DEFINITIONS.map((t) => t.function.name));
 
 // Today's date injected once so the model always has accurate temporal context.
@@ -84,6 +85,19 @@ export async function runAgent(userMessage, credentials, sessionId) {
       : randomUUID();
 
   const sessionHistory = getSessionMessages(resolvedSessionId);
+  const activeTaskDraft = getTaskDraft(resolvedSessionId);
+
+  const guidedTaskResponse = await handleGuidedTaskCreation({
+    sessionId: resolvedSessionId,
+    userMessage,
+    sessionHistory,
+    activeDraft: activeTaskDraft,
+    credentials,
+  });
+
+  if (guidedTaskResponse) {
+    return guidedTaskResponse;
+  }
 
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
@@ -275,7 +289,9 @@ export function endSession(sessionId) {
   if (typeof sessionId !== "string" || sessionId.trim() === "") {
     return false;
   }
-  return sessionStore.delete(sessionId.trim());
+  const safeSessionId = sessionId.trim();
+  taskDraftStore.delete(safeSessionId);
+  return sessionStore.delete(safeSessionId);
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -511,6 +527,362 @@ function resolveServiceName(toolName) {
   return "unknown-service";
 }
 
+async function handleGuidedTaskCreation({
+  sessionId,
+  userMessage,
+  sessionHistory,
+  activeDraft,
+  credentials,
+}) {
+  const text = typeof userMessage === "string" ? userMessage.trim() : "";
+  if (!text) return null;
+
+  const lower = text.toLowerCase();
+
+  if (!activeDraft && !looksLikeTaskCreationIntent(lower)) {
+    return null;
+  }
+
+  if (!activeDraft && looksLikeTaskCreationIntent(lower)) {
+    const draft = {
+      state: "collecting",
+      fields: {
+        title: "",
+        description: "",
+        due_date: null,
+        priority: "medium",
+      },
+      nextField: "title",
+      lastUpdatedAt: Date.now(),
+    };
+    setTaskDraft(sessionId, draft);
+
+    const response =
+      "Great, I can create that task.\n\n" +
+      "Please share the task title first.";
+
+    return buildGuidedReply({
+      sessionId,
+      sessionHistory,
+      userMessage: text,
+      response,
+      toolsUsed: [],
+      errors: [],
+    });
+  }
+
+  if (!activeDraft) return null;
+
+  if (isCancelText(lower)) {
+    clearTaskDraft(sessionId);
+    return buildGuidedReply({
+      sessionId,
+      sessionHistory,
+      userMessage: text,
+      response: "Task creation cancelled.",
+      toolsUsed: [],
+      errors: [],
+    });
+  }
+
+  if (activeDraft.state === "awaiting_approval") {
+    if (!isApprovalText(lower)) {
+      return buildGuidedReply({
+        sessionId,
+        sessionHistory,
+        userMessage: text,
+        response:
+          "I have the draft ready. Please reply with approve to create it, or cancel to discard it.",
+        toolsUsed: [],
+        errors: [],
+      });
+    }
+
+    const toolsUsed = [];
+    const errors = [];
+
+    const createArgs = buildCreateTaskArgs(activeDraft.fields);
+    toolsUsed.push("create_task");
+    const created = await dispatchTool("create_task", createArgs, credentials);
+
+    if (!created.success) {
+      if (created.error) {
+        errors.push(created.error);
+      }
+
+      clearTaskDraft(sessionId);
+      return buildGuidedReply({
+        sessionId,
+        sessionHistory,
+        userMessage: text,
+        response:
+          "I could not create the task right now. Please check your Google sign-in and try again.",
+        toolsUsed,
+        errors,
+      });
+    }
+
+    toolsUsed.push("get_tasks");
+    const pending = await dispatchTool("get_tasks", { status: "pending" }, credentials);
+
+    if (!pending.success) {
+      if (pending.error) {
+        errors.push(pending.error);
+      }
+
+      clearTaskDraft(sessionId);
+      return buildGuidedReply({
+        sessionId,
+        sessionHistory,
+        userMessage: text,
+        response:
+          "Task created. I could not fetch your pending list right now, but the task was successfully submitted.",
+        toolsUsed,
+        errors,
+      });
+    }
+
+    const createdTask = created.data ?? {};
+    const pendingTasks = Array.isArray(pending.data?.tasks) ? pending.data.tasks : [];
+    const response = [
+      "Task created successfully:",
+      formatTaskPreview(createdTask),
+      "",
+      `Here are your pending tasks (${pendingTasks.length}):`,
+      ...formatPendingTaskList(pendingTasks),
+    ].join("\n");
+
+    clearTaskDraft(sessionId);
+    return buildGuidedReply({
+      sessionId,
+      sessionHistory,
+      userMessage: text,
+      response,
+      toolsUsed,
+      errors,
+    });
+  }
+
+  const draft = cloneTaskDraft(activeDraft);
+  const next = draft.nextField;
+
+  if (next === "title") {
+    const title = text.trim();
+    if (!title) {
+      return buildGuidedReply({
+        sessionId,
+        sessionHistory,
+        userMessage: text,
+        response: "Please provide a non-empty title for the task.",
+        toolsUsed: [],
+        errors: [],
+      });
+    }
+    draft.fields.title = title;
+    draft.nextField = "description";
+    draft.lastUpdatedAt = Date.now();
+    setTaskDraft(sessionId, draft);
+
+    return buildGuidedReply({
+      sessionId,
+      sessionHistory,
+      userMessage: text,
+      response:
+        "Got it.\n\nPlease provide a short description. You can also reply skip if you do not want one.",
+      toolsUsed: [],
+      errors: [],
+    });
+  }
+
+  if (next === "description") {
+    draft.fields.description = isSkipText(lower) ? "" : text;
+    draft.nextField = "due_date";
+    draft.lastUpdatedAt = Date.now();
+    setTaskDraft(sessionId, draft);
+
+    return buildGuidedReply({
+      sessionId,
+      sessionHistory,
+      userMessage: text,
+      response:
+        "Thanks.\n\nWhat is the due date? Use YYYY-MM-DD, or say today/tomorrow, or reply skip.",
+      toolsUsed: [],
+      errors: [],
+    });
+  }
+
+  if (next === "due_date") {
+    if (isSkipText(lower)) {
+      draft.fields.due_date = null;
+    } else {
+      const dueDate = normalizeDate(text);
+      if (!dueDate) {
+        return buildGuidedReply({
+          sessionId,
+          sessionHistory,
+          userMessage: text,
+          response: "Please provide the due date as YYYY-MM-DD, or say today, tomorrow, or skip.",
+          toolsUsed: [],
+          errors: [],
+        });
+      }
+      draft.fields.due_date = dueDate;
+    }
+
+    draft.nextField = "priority";
+    draft.lastUpdatedAt = Date.now();
+    setTaskDraft(sessionId, draft);
+
+    return buildGuidedReply({
+      sessionId,
+      sessionHistory,
+      userMessage: text,
+      response:
+        "Great.\n\nWhat priority should I set: low, medium, or high? You can also reply skip (defaults to medium).",
+      toolsUsed: [],
+      errors: [],
+    });
+  }
+
+  if (next === "priority") {
+    if (isSkipText(lower)) {
+      draft.fields.priority = "medium";
+    } else {
+      const priority = normalizeEnum(text, ["low", "medium", "high"], "");
+      if (!priority) {
+        return buildGuidedReply({
+          sessionId,
+          sessionHistory,
+          userMessage: text,
+          response: "Please choose one priority: low, medium, or high. You can also reply skip.",
+          toolsUsed: [],
+          errors: [],
+        });
+      }
+      draft.fields.priority = priority;
+    }
+
+    draft.state = "awaiting_approval";
+    draft.nextField = null;
+    draft.lastUpdatedAt = Date.now();
+    setTaskDraft(sessionId, draft);
+
+    const response = [
+      "Here is the new task to be created:",
+      formatTaskPreview(draft.fields),
+      "",
+      "Reply approve to create it, or cancel to discard.",
+    ].join("\n");
+
+    return buildGuidedReply({
+      sessionId,
+      sessionHistory,
+      userMessage: text,
+      response,
+      toolsUsed: [],
+      errors: [],
+    });
+  }
+
+  return null;
+}
+
+function buildGuidedReply({ sessionId, sessionHistory, userMessage, response, toolsUsed, errors }) {
+  saveSessionMessages(sessionId, [
+    ...sessionHistory,
+    { role: "user", content: userMessage },
+    { role: "assistant", content: response },
+  ]);
+
+  return {
+    session_id: sessionId,
+    response,
+    tools_used: toolsUsed,
+    errors,
+  };
+}
+
+function cloneTaskDraft(draft) {
+  return {
+    ...draft,
+    fields: { ...draft.fields },
+  };
+}
+
+function setTaskDraft(sessionId, draft) {
+  taskDraftStore.set(sessionId, draft);
+}
+
+function getTaskDraft(sessionId) {
+  return taskDraftStore.get(sessionId) ?? null;
+}
+
+function clearTaskDraft(sessionId) {
+  taskDraftStore.delete(sessionId);
+}
+
+function looksLikeTaskCreationIntent(text) {
+  if (!text) return false;
+  return (
+    /\bcreate\b.*\btasks?\b/.test(text) ||
+    /\badd\b.*\btasks?\b/.test(text) ||
+    /\bnew\b.*\btasks?\b/.test(text) ||
+    /\bmake\b.*\btasks?\b/.test(text)
+  );
+}
+
+function isSkipText(text) {
+  if (!text) return false;
+  return /^(skip|none|no|n\/a)$/i.test(text.trim());
+}
+
+function isCancelText(text) {
+  if (!text) return false;
+  return /^(cancel|stop|abort|nevermind|never mind)$/i.test(text.trim());
+}
+
+function isApprovalText(text) {
+  if (!text) return false;
+  return /^(approve|yes|confirm|create|proceed|ok)$/i.test(text.trim());
+}
+
+function buildCreateTaskArgs(fields) {
+  const payload = {
+    title: fields.title,
+    description: fields.description ?? "",
+    priority: fields.priority ?? "medium",
+  };
+  if (fields.due_date) {
+    payload.due_date = fields.due_date;
+  }
+  return payload;
+}
+
+function formatTaskPreview(task) {
+  const due = task.due_date ?? "No due date";
+  const priority = task.priority ?? "medium";
+  const description = task.description?.trim() ? task.description.trim() : "No description";
+
+  return [
+    `• Title: ${task.title ?? "Untitled"}`,
+    `• Description: ${description}`,
+    `• Due date: ${due}`,
+    `• Priority: ${priority}`,
+  ].join("\n");
+}
+
+function formatPendingTaskList(tasks) {
+  if (!tasks.length) {
+    return ["• No pending tasks."];
+  }
+
+  return tasks.map((task) => {
+    const due = task.due_date ?? "no due date";
+    const priority = task.priority ?? "medium";
+    return `• ${task.title ?? "Untitled"} (due: ${due}, priority: ${priority})`;
+  });
+}
+
 function getSessionMessages(sessionId) {
   const entry = sessionStore.get(sessionId);
   if (!entry) return [];
@@ -531,6 +903,7 @@ function cleanupExpiredSessions() {
   for (const [id, entry] of sessionStore.entries()) {
     if (now - entry.updatedAt > SESSION_TTL_MS) {
       sessionStore.delete(id);
+      taskDraftStore.delete(id);
     }
   }
 }
