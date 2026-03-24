@@ -37,11 +37,20 @@ function normalizeProfile(profile) {
 
   const email = profile.email ?? null;
   const fallbackName = email ? String(email).split("@")[0] : "Google account";
+  const rawPicture = typeof profile.picture === "string" ? profile.picture.trim() : "";
+  let picture = null;
+  if (/^https?:\/\//i.test(rawPicture)) {
+    picture = rawPicture;
+  } else if (rawPicture.startsWith("//")) {
+    picture = `https:${rawPicture}`;
+  } else if (/^[a-z0-9.-]+\.googleusercontent\.com\//i.test(rawPicture)) {
+    picture = `https://${rawPicture}`;
+  }
 
   return {
     name: profile.name ?? fallbackName,
     email,
-    picture: profile.picture ?? null,
+    picture,
   };
 }
 

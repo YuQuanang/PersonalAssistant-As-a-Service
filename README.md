@@ -38,22 +38,19 @@ PersonalAssistant-As-a-Service/
 │   ├── calendar-service/       # Checks availability & books meetings  :3001
 │   │   ├── src/
 │   │   │   ├── index.js
-│   │   │   ├── routes/calendar.js
-│   │   │   └── data/dummy.js
+│   │   │   └── routes/calendar.js
 │   │   └── package.json
 │   │
 │   ├── task-service/           # Fetches & creates tasks               :3002
 │   │   ├── src/
 │   │   │   ├── index.js
 │   │   │   ├── routes/tasks.js
-│   │   │   └── data/dummy.js
 │   │   └── package.json
 │   │
 │   └── email-service/          # Fetches emails & generates summaries   :3003
 │       ├── src/
 │       │   ├── index.js
-│       │   ├── routes/emails.js
-│       │   └── data/dummy.js
+│       │   └── routes/emails.js
 │       └── package.json
 │
 └── docs/
@@ -68,7 +65,7 @@ PersonalAssistant-As-a-Service/
 | Framework      | Express 4                       |
 | LLM            | Ollama (local) — LLaMA 3        |
 | HTTP client    | Axios                           |
-| Storage        | In-memory dummy data (Phase 1)  |
+| Storage        | Google APIs (Calendar, Tasks, Gmail) |
 
 ## Prerequisites
 
@@ -156,9 +153,16 @@ Task service behavior can be configured with environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
-| `TASKS_SOURCE` | `google` | Task backend to use: `google` or `dummy` |
-| `TASKS_FALLBACK_TO_DUMMY` | `true` | If `true`, task-service falls back to in-memory tasks when Google Tasks auth/API calls fail |
 | `GOOGLE_TASKLIST_ID` | `@default` | Google Task List ID used for read/write |
+
+Calendar service behavior can be configured with environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `GOOGLE_CALENDAR_ID` | `primary` | Google Calendar ID used for availability checks and bookings |
+| `CALENDAR_TIMEZONE` | `UTC` | Timezone used when creating calendar events |
+| `CALENDAR_WORK_START_HOUR` | `9` | Start hour for hourly availability slots (24-hour) |
+| `CALENDAR_WORK_END_HOUR` | `17` | End hour for hourly availability slots (24-hour, exclusive) |
 
 ## Smoke Tests
 

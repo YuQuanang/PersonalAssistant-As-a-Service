@@ -13,6 +13,7 @@ function initialsFromName(name = "") {
 export default function Header() {
   const { user, login, logout, switchAccount } = useAuth();
   const [open, setOpen] = useState(false);
+  const [avatarBroken, setAvatarBroken] = useState(false);
   const wrapRef = useRef(null);
 
   useEffect(() => {
@@ -34,6 +35,11 @@ export default function Header() {
   }
 
   const owner = user?.name ?? "Not signed in";
+  const canShowAvatar = !!user?.picture && !avatarBroken;
+
+  useEffect(() => {
+    setAvatarBroken(false);
+  }, [user?.picture]);
 
   return (
     <header className={styles.header}>
@@ -52,8 +58,13 @@ export default function Header() {
           aria-label="Google account menu"
           onClick={() => setOpen((v) => !v)}
         >
-          {user?.picture ? (
-            <img src={user.picture} alt="profile" className={styles.avatarImg} />
+          {canShowAvatar ? (
+            <img
+              src={user.picture}
+              alt="profile"
+              className={styles.avatarImg}
+              onError={() => setAvatarBroken(true)}
+            />
           ) : (
             <span className={styles.avatarFallback}>{initialsFromName(owner)}</span>
           )}

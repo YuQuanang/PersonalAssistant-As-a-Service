@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import styles from "./Header.module.css";
 
 export default function AccountDropdown({
@@ -7,6 +8,12 @@ export default function AccountDropdown({
   onSwitch,
   onSignOut,
 }) {
+  const [avatarBroken, setAvatarBroken] = useState(false);
+
+  useEffect(() => {
+    setAvatarBroken(false);
+  }, [user?.picture]);
+
   if (!open) return null;
 
   const initials = user?.name
@@ -16,13 +23,19 @@ export default function AccountDropdown({
         .map((p) => p[0]?.toUpperCase() ?? "")
         .join("")
     : "G";
+  const canShowAvatar = !!user?.picture && !avatarBroken;
 
   return (
     <div className={styles.accountMenu} aria-hidden={!open}>
       <div className={styles.accountCard}>
         <div className={styles.accountAvatar}>
-          {user?.picture ? (
-            <img src={user.picture} alt="profile" className={styles.accountAvatarImg} />
+          {canShowAvatar ? (
+            <img
+              src={user.picture}
+              alt="profile"
+              className={styles.accountAvatarImg}
+              onError={() => setAvatarBroken(true)}
+            />
           ) : (
             <span>{initials}</span>
           )}

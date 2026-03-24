@@ -1,7 +1,7 @@
 {
   "name": "paas-email-service",
   "version": "1.0.0",
-  "description": "Email Intelligence Service — PAaaS dummy microservice",
+  "description": "Email Intelligence Service — Gmail-backed microservice",
   "main": "src/index.js",
   "type": "module",
   "scripts": {

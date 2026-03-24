@@ -1,7 +1,7 @@
 {
   "name": "paas-task-service",
   "version": "1.0.0",
-  "description": "Task Management Service — PAaaS dummy microservice",
+  "description": "Task Management Service — Google Tasks-backed microservice",
   "main": "src/index.js",
   "type": "module",
   "scripts": {

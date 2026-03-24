@@ -20,13 +20,13 @@ export async function sendMessage(sessionId, userMessage, history, signal) {
 
 export async function fetchProfile() {
   try {
-    const res = await http.get("/api/profile", {
+    const res = await http.get("/api/auth/profile", {
       headers: { "Cache-Control": "no-store" },
     });
     return res.data;
   } catch (err) {
     if (err?.response?.status === 404) {
-      const fallback = await http.get("/api/auth/profile", {
+      const fallback = await http.get("/api/profile", {
         headers: { "Cache-Control": "no-store" },
       });
       return fallback.data;
@@ -38,10 +38,10 @@ export async function fetchProfile() {
 
 export async function clearSession(sessionId) {
   try {
-    await http.post("/api/session/clear", { sessionId, session_id: sessionId });
+    await http.post("/api/chat/session/end", { sessionId, session_id: sessionId });
   } catch (err) {
     if (err?.response?.status === 404) {
-      await http.post("/api/chat/session/end", { session_id: sessionId });
+      await http.post("/api/session/clear", { sessionId, session_id: sessionId });
       return;
     }
     throw err;
@@ -75,10 +75,10 @@ export function getSwitchAccountUrl(returnTo = "/chat") {
 
 export async function logout() {
   try {
-    await http.get("/auth/logout");
+    await http.post("/api/auth/logout");
   } catch (err) {
     if (err?.response?.status === 404) {
-      await http.post("/api/auth/logout");
+      await http.get("/auth/logout");
       return;
     }
     throw err;

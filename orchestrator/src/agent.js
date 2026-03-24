@@ -16,7 +16,12 @@ const MAX_SESSION_MESSAGES = MAX_SESSION_INTERACTIONS * 2;
 const SESSION_TTL_MS = parseInt(process.env.SESSION_TTL_MS ?? "1800000", 10);
 const sessionStore = new Map();
 const taskDraftStore = new Map();
-const VALID_TOOL_NAMES = new Set(TOOL_DEFINITIONS.map((t) => t.function.name));
+const taskDeleteDraftStore = new Map();
+const LLM_BLOCKED_TOOL_NAMES = new Set(["create_task", "delete_tasks"]);
+const LLM_TOOL_DEFINITIONS = TOOL_DEFINITIONS.filter(
+  (t) => !LLM_BLOCKED_TOOL_NAMES.has(t.function.name)
+);
+const VALID_LLM_TOOL_NAMES = new Set(LLM_TOOL_DEFINITIONS.map((t) => t.function.name));
 
 // Today's date injected once so the model always has accurate temporal context.
 const TODAY = new Date().toISOString().slice(0, 10);
@@ -26,12 +31,13 @@ You are PAaaS, a friendly and helpful personal assistant. Today's date is ${TODA
 
 You have access to three services via tools:
   • Calendar Service — check free slots and book meetings
-  • Task Service     — list pending tasks and create new ones
+  • Task Service     — list pending tasks (task creation/deletion are handled via guided multi-step flow)
   • Email Service    — list unread emails and summarize specific ones
 
 ── RESPONSE STYLE ──────────────────────────────────────────────────────────────
 - Write in a warm, conversational tone — like a capable human assistant, not a robot.
 - Use clear, natural English. Avoid filler phrases like "Certainly!", "Of course!", or "Sure thing!".
+- Include friendly, relevant emojis naturally in every response (for example: ✅ for tasks, 📅 for calendar, 📧 for emails, 🙂 for neutral confirmations).
 - Format lists with bullet points (•). Use bold (**text**) to highlight key names, dates, or priorities.
 - For tasks: always mention the title, due date, and priority.
 - For calendar slots: group them naturally (e.g. "You have three open slots: 9–10 AM, 11 AM–12 PM, and 2–3 PM").
@@ -73,7 +79,8 @@ You have access to three services via tools:
  *   session_id: string,
  *   response:   string,
  *   tools_used: string[],
- *   errors:     Array<{ service: string, reason: string }>
+ *   errors:     Array<{ service: string, reason: string }>,
+ *   suggestions?: string[]
  * }>}
  */
 export async function runAgent(userMessage, credentials, sessionId) {
@@ -86,6 +93,19 @@ export async function runAgent(userMessage, credentials, sessionId) {
 
   const sessionHistory = getSessionMessages(resolvedSessionId);
   const activeTaskDraft = getTaskDraft(resolvedSessionId);
+  const activeTaskDeleteDraft = getTaskDeleteDraft(resolvedSessionId);
+
+  const guidedTaskDeleteResponse = await handleGuidedTaskDeletion({
+    sessionId: resolvedSessionId,
+    userMessage,
+    sessionHistory,
+    activeDraft: activeTaskDeleteDraft,
+    credentials,
+  });
+
+  if (guidedTaskDeleteResponse) {
+    return guidedTaskDeleteResponse;
+  }
 
   const guidedTaskResponse = await handleGuidedTaskCreation({
     sessionId: resolvedSessionId,
@@ -114,7 +134,7 @@ export async function runAgent(userMessage, credentials, sessionId) {
     try {
       const { data } = await axios.post(
         OLLAMA_CHAT_URL,
-        { model: OLLAMA.model, messages, tools: TOOL_DEFINITIONS, stream: false },
+        { model: OLLAMA.model, messages, tools: LLM_TOOL_DEFINITIONS, stream: false },
         { timeout: OLLAMA.timeout }
       );
       ollamaData = data;
@@ -136,10 +156,11 @@ export async function runAgent(userMessage, credentials, sessionId) {
 
     // No tool calls → either final prose, or an invalid pseudo tool-call plan.
     if (!toolCalls || toolCalls.length === 0) {
-      const assistantResponse = assistantMessage.content?.trim() ?? "(No response generated)";
+      const assistantResponseRaw = assistantMessage.content?.trim() ?? "(No response generated)";
+      const assistantResponse = ensureFriendlyEmoji(assistantResponseRaw);
 
       const plannedCall = extractPlannedToolCall(assistantResponse);
-      if (plannedCall && VALID_TOOL_NAMES.has(plannedCall.name)) {
+      if (plannedCall && VALID_LLM_TOOL_NAMES.has(plannedCall.name)) {
         const resolvedArgs = await resolveToolArgs(
           plannedCall.name,
           plannedCall.args,
@@ -200,6 +221,7 @@ export async function runAgent(userMessage, credentials, sessionId) {
         response:   assistantResponse,
         tools_used: toolsUsed,
         errors,
+        suggestions: [],
       };
     }
 
@@ -207,6 +229,20 @@ export async function runAgent(userMessage, credentials, sessionId) {
     const results = await Promise.all(
       toolCalls.map(async (tc) => {
         const name = tc.function.name;
+
+        if (!VALID_LLM_TOOL_NAMES.has(name)) {
+          return {
+            name,
+            result: {
+              success: false,
+              data: null,
+              error: {
+                service: resolveServiceName(name),
+                reason: `Tool '${name}' is not available in direct chat mode.`,
+              },
+            },
+          };
+        }
 
         // Ollama returns arguments as either an object or a JSON string.
         const args =
@@ -279,9 +315,10 @@ export async function runAgent(userMessage, credentials, sessionId) {
 
   return {
     session_id: resolvedSessionId,
-    response: fallbackResponse,
+    response: ensureFriendlyEmoji(fallbackResponse),
     tools_used: toolsUsed,
     errors,
+    suggestions: [],
   };
 }
 
@@ -291,6 +328,7 @@ export function endSession(sessionId) {
   }
   const safeSessionId = sessionId.trim();
   taskDraftStore.delete(safeSessionId);
+  taskDeleteDraftStore.delete(safeSessionId);
   return sessionStore.delete(safeSessionId);
 }
 
@@ -380,6 +418,16 @@ async function resolveToolArgs(name, args, credentials, toolsUsed, errors, userM
     };
   }
 
+  if (name === "delete_tasks") {
+    const taskIds = Array.isArray(safeArgs.task_ids)
+      ? safeArgs.task_ids
+          .filter((id) => typeof id === "string")
+          .map((id) => id.trim())
+          .filter(Boolean)
+      : [];
+    return taskIds.length > 0 ? { task_ids: taskIds } : null;
+  }
+
   if (name === "get_emails") {
     return { filter: normalizeEnum(safeArgs.filter, ["unread", "read", "all"], "unread") };
   }
@@ -444,6 +492,11 @@ function normalizeDate(value) {
   if (v === "tomorrow") {
     const d = new Date();
     d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }
+  if (v === "next week") {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
     return d.toISOString().slice(0, 10);
   }
   return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
@@ -518,7 +571,7 @@ function resolveServiceName(toolName) {
   if (toolName === "check_calendar_availability" || toolName === "book_meeting") {
     return "calendar-service";
   }
-  if (toolName === "get_tasks" || toolName === "create_task") {
+  if (toolName === "get_tasks" || toolName === "create_task" || toolName === "delete_tasks") {
     return "task-service";
   }
   if (toolName === "get_emails" || toolName === "summarize_email") {
@@ -568,6 +621,7 @@ async function handleGuidedTaskCreation({
       response,
       toolsUsed: [],
       errors: [],
+      suggestions: [],
     });
   }
 
@@ -582,19 +636,54 @@ async function handleGuidedTaskCreation({
       response: "Task creation cancelled.",
       toolsUsed: [],
       errors: [],
+      suggestions: [],
     });
   }
 
   if (activeDraft.state === "awaiting_approval") {
+    if (isDeclineText(lower)) {
+      clearTaskDraft(sessionId);
+      return buildGuidedReply({
+        sessionId,
+        sessionHistory,
+        userMessage: text,
+        response: "Task creation cancelled.",
+        toolsUsed: [],
+        errors: [],
+        suggestions: [],
+      });
+    }
+
+    if (isPreviousInputText(lower)) {
+      const draft = cloneTaskDraft(activeDraft);
+      draft.state = "collecting";
+      draft.nextField = "priority";
+      draft.lastUpdatedAt = Date.now();
+      setTaskDraft(sessionId, draft);
+
+      return buildGuidedReply({
+        sessionId,
+        sessionHistory,
+        userMessage: text,
+        response:
+          "Okay, let's update the priority.\n\n" +
+          "What priority should I set: low, medium, or high? You can also reply skip (defaults to medium).",
+        toolsUsed: [],
+        errors: [],
+        suggestions: ["Low", "Medium", "High", "Skip", "Previous Input"],
+      });
+    }
+
     if (!isApprovalText(lower)) {
       return buildGuidedReply({
         sessionId,
         sessionHistory,
         userMessage: text,
         response:
-          "I have the draft ready. Please reply with approve to create it, or cancel to discard it.",
+          "I have the draft ready. Please reply with approved to create it, or decline to discard it.",
         toolsUsed: [],
         errors: [],
+        suggestions: ["Approved", "Decline", "Previous Input"],
       });
     }
 
@@ -619,6 +708,7 @@ async function handleGuidedTaskCreation({
           "I could not create the task right now. Please check your Google sign-in and try again.",
         toolsUsed,
         errors,
+        suggestions: [],
       });
     }
 
@@ -639,6 +729,7 @@ async function handleGuidedTaskCreation({
           "Task created. I could not fetch your pending list right now, but the task was successfully submitted.",
         toolsUsed,
         errors,
+        suggestions: [],
       });
     }
 
@@ -648,7 +739,7 @@ async function handleGuidedTaskCreation({
       "Task created successfully:",
       formatTaskPreview(createdTask),
       "",
-      `Here are your pending tasks (${pendingTasks.length}):`,
+      `Here are your pending tasks ${toEmojiNumber(pendingTasks.length)}:`,
       ...formatPendingTaskList(pendingTasks),
     ].join("\n");
 
@@ -660,6 +751,7 @@ async function handleGuidedTaskCreation({
       response,
       toolsUsed,
       errors,
+      suggestions: [],
     });
   }
 
@@ -676,6 +768,7 @@ async function handleGuidedTaskCreation({
         response: "Please provide a non-empty title for the task.",
         toolsUsed: [],
         errors: [],
+        suggestions: [],
       });
     }
     draft.fields.title = title;
@@ -691,10 +784,45 @@ async function handleGuidedTaskCreation({
         "Got it.\n\nPlease provide a short description. You can also reply skip if you do not want one.",
       toolsUsed: [],
       errors: [],
+      suggestions: ["Skip", "Retype Task Title"],
     });
   }
 
   if (next === "description") {
+    if (isRetypeTitleText(lower)) {
+      draft.fields.title = "";
+      draft.nextField = "title";
+      draft.lastUpdatedAt = Date.now();
+      setTaskDraft(sessionId, draft);
+
+      return buildGuidedReply({
+        sessionId,
+        sessionHistory,
+        userMessage: text,
+        response: "Sure. Please share the task title again.",
+        toolsUsed: [],
+        errors: [],
+        suggestions: [],
+      });
+    }
+
+    if (isPreviousInputText(lower)) {
+      draft.fields.title = "";
+      draft.nextField = "title";
+      draft.lastUpdatedAt = Date.now();
+      setTaskDraft(sessionId, draft);
+
+      return buildGuidedReply({
+        sessionId,
+        sessionHistory,
+        userMessage: text,
+        response: "Okay, let's go back. Please share the task title again.",
+        toolsUsed: [],
+        errors: [],
+        suggestions: [],
+      });
+    }
+
     draft.fields.description = isSkipText(lower) ? "" : text;
     draft.nextField = "due_date";
     draft.lastUpdatedAt = Date.now();
@@ -705,13 +833,32 @@ async function handleGuidedTaskCreation({
       sessionHistory,
       userMessage: text,
       response:
-        "Thanks.\n\nWhat is the due date? Use YYYY-MM-DD, or say today/tomorrow, or reply skip.",
+        "Thanks.\n\nWhat is the due date? Use YYYY-MM-DD, or say today/tomorrow/next week, or reply skip.",
       toolsUsed: [],
       errors: [],
+        suggestions: ["Today", "Next Week", "Skip", "Previous Input"],
     });
   }
 
   if (next === "due_date") {
+    if (isPreviousInputText(lower)) {
+      draft.fields.description = "";
+      draft.nextField = "description";
+      draft.lastUpdatedAt = Date.now();
+      setTaskDraft(sessionId, draft);
+
+      return buildGuidedReply({
+        sessionId,
+        sessionHistory,
+        userMessage: text,
+        response:
+          "Okay, let's go back.\n\nPlease provide a short description. You can also reply skip if you do not want one.",
+        toolsUsed: [],
+        errors: [],
+        suggestions: ["Skip", "Retype Task Title"],
+      });
+    }
+
     if (isSkipText(lower)) {
       draft.fields.due_date = null;
     } else {
@@ -721,9 +868,10 @@ async function handleGuidedTaskCreation({
           sessionId,
           sessionHistory,
           userMessage: text,
-          response: "Please provide the due date as YYYY-MM-DD, or say today, tomorrow, or skip.",
+          response: "Please provide the due date as YYYY-MM-DD, or say today, tomorrow, next week, or skip.",
           toolsUsed: [],
           errors: [],
+          suggestions: ["Today", "Next Week", "Skip", "Previous Input"],
         });
       }
       draft.fields.due_date = dueDate;
@@ -741,10 +889,29 @@ async function handleGuidedTaskCreation({
         "Great.\n\nWhat priority should I set: low, medium, or high? You can also reply skip (defaults to medium).",
       toolsUsed: [],
       errors: [],
+      suggestions: ["Low", "Medium", "High", "Skip", "Previous Input"],
     });
   }
 
   if (next === "priority") {
+    if (isPreviousInputText(lower)) {
+      draft.fields.due_date = null;
+      draft.nextField = "due_date";
+      draft.lastUpdatedAt = Date.now();
+      setTaskDraft(sessionId, draft);
+
+      return buildGuidedReply({
+        sessionId,
+        sessionHistory,
+        userMessage: text,
+        response:
+          "Okay, let's update the due date.\n\nWhat is the due date? Use YYYY-MM-DD, or say today/tomorrow/next week, or reply skip.",
+        toolsUsed: [],
+        errors: [],
+        suggestions: ["Today", "Next Week", "Skip", "Previous Input"],
+      });
+    }
+
     if (isSkipText(lower)) {
       draft.fields.priority = "medium";
     } else {
@@ -757,6 +924,7 @@ async function handleGuidedTaskCreation({
           response: "Please choose one priority: low, medium, or high. You can also reply skip.",
           toolsUsed: [],
           errors: [],
+          suggestions: ["Low", "Medium", "High", "Skip", "Previous Input"],
         });
       }
       draft.fields.priority = priority;
@@ -771,7 +939,7 @@ async function handleGuidedTaskCreation({
       "Here is the new task to be created:",
       formatTaskPreview(draft.fields),
       "",
-      "Reply approve to create it, or cancel to discard.",
+      "Reply approved to create it, or decline to discard.",
     ].join("\n");
 
     return buildGuidedReply({
@@ -781,25 +949,301 @@ async function handleGuidedTaskCreation({
       response,
       toolsUsed: [],
       errors: [],
+      suggestions: ["Approved", "Decline", "Previous Input"],
     });
   }
 
   return null;
 }
 
-function buildGuidedReply({ sessionId, sessionHistory, userMessage, response, toolsUsed, errors }) {
+async function handleGuidedTaskDeletion({
+  sessionId,
+  userMessage,
+  sessionHistory,
+  activeDraft,
+  credentials,
+}) {
+  const text = typeof userMessage === "string" ? userMessage.trim() : "";
+  if (!text) return null;
+
+  const lower = text.toLowerCase();
+
+  if (!activeDraft && !looksLikeTaskDeleteIntent(lower)) {
+    return null;
+  }
+
+  if (!activeDraft && looksLikeTaskDeleteIntent(lower)) {
+    clearTaskDraft(sessionId);
+
+    const toolsUsed = ["get_tasks"];
+    const errors = [];
+
+    const pending = await dispatchTool("get_tasks", { status: "pending" }, credentials);
+    if (!pending.success) {
+      if (pending.error) errors.push(pending.error);
+      return buildGuidedReply({
+        sessionId,
+        sessionHistory,
+        userMessage: text,
+        response: "I could not load your pending tasks right now. Please try again shortly.",
+        toolsUsed,
+        errors,
+        suggestions: [],
+      });
+    }
+
+    const tasks = Array.isArray(pending.data?.tasks) ? pending.data.tasks : [];
+    if (tasks.length === 0) {
+      return buildGuidedReply({
+        sessionId,
+        sessionHistory,
+        userMessage: text,
+        response: "You have no pending tasks to delete right now.",
+        toolsUsed,
+        errors,
+        suggestions: [],
+      });
+    }
+
+    const draft = {
+      state: "awaiting_selection",
+      candidates: tasks.map((task) => ({
+        id: task.id,
+        title: task.title,
+        due_date: task.due_date ?? null,
+        priority: task.priority ?? "medium",
+      })),
+      selectedTaskIds: [],
+      lastUpdatedAt: Date.now(),
+    };
+    setTaskDeleteDraft(sessionId, draft);
+
+    const response = [
+      "Sure, I can help delete tasks. Please choose which task number(s) to remove:",
+      ...formatNumberedTaskChoices(draft.candidates),
+      "",
+      "Reply with one or more numbers (for example: 1,3).",
+    ].join("\n");
+
+    return buildGuidedReply({
+      sessionId,
+      sessionHistory,
+      userMessage: text,
+      response,
+      toolsUsed,
+      errors,
+      suggestions: buildTaskSelectionSuggestions(draft.candidates.length),
+    });
+  }
+
+  if (!activeDraft) return null;
+
+  if (isCancelText(lower) || isDeclineText(lower)) {
+    clearTaskDeleteDraft(sessionId);
+    return buildGuidedReply({
+      sessionId,
+      sessionHistory,
+      userMessage: text,
+      response: "Task deletion cancelled.",
+      toolsUsed: [],
+      errors: [],
+      suggestions: [],
+    });
+  }
+
+  if (activeDraft.state === "awaiting_selection") {
+    const pickedNumbers = parseTaskSelectionNumbers(text, activeDraft.candidates.length);
+    if (!pickedNumbers || pickedNumbers.length === 0) {
+      const response = [
+        "Please choose valid task number(s) from the list:",
+        ...formatNumberedTaskChoices(activeDraft.candidates),
+        "",
+        "Reply with one or more numbers (for example: 1,3), or Cancel.",
+      ].join("\n");
+
+      return buildGuidedReply({
+        sessionId,
+        sessionHistory,
+        userMessage: text,
+        response,
+        toolsUsed: [],
+        errors: [],
+        suggestions: buildTaskSelectionSuggestions(activeDraft.candidates.length),
+      });
+    }
+
+    const selectedTaskIds = pickedNumbers.map((n) => activeDraft.candidates[n - 1]?.id).filter(Boolean);
+    const selectedTasks = pickedNumbers.map((n) => activeDraft.candidates[n - 1]).filter(Boolean);
+
+    const nextDraft = {
+      ...activeDraft,
+      state: "awaiting_approval",
+      selectedTaskIds,
+      lastUpdatedAt: Date.now(),
+    };
+    setTaskDeleteDraft(sessionId, nextDraft);
+
+    const response = [
+      `Please confirm deletion for ${toEmojiNumber(selectedTasks.length)} task(s):`,
+      ...selectedTasks.map((task) => formatTaskChoice(task)),
+      "",
+      "Reply Approved to delete, Decline to cancel, or Previous Input to reselect tasks.",
+    ].join("\n");
+
+    return buildGuidedReply({
+      sessionId,
+      sessionHistory,
+      userMessage: text,
+      response,
+      toolsUsed: [],
+      errors: [],
+      suggestions: ["Approved", "Decline", "Previous Input"],
+    });
+  }
+
+  if (activeDraft.state === "awaiting_approval") {
+    if (isPreviousInputText(lower)) {
+      const resetDraft = {
+        ...activeDraft,
+        state: "awaiting_selection",
+        selectedTaskIds: [],
+        lastUpdatedAt: Date.now(),
+      };
+      setTaskDeleteDraft(sessionId, resetDraft);
+
+      const response = [
+        "No problem. Please choose the task number(s) to delete:",
+        ...formatNumberedTaskChoices(resetDraft.candidates),
+        "",
+        "Reply with one or more numbers (for example: 1,3).",
+      ].join("\n");
+
+      return buildGuidedReply({
+        sessionId,
+        sessionHistory,
+        userMessage: text,
+        response,
+        toolsUsed: [],
+        errors: [],
+        suggestions: buildTaskSelectionSuggestions(resetDraft.candidates.length),
+      });
+    }
+
+    if (!isApprovalText(lower)) {
+      return buildGuidedReply({
+        sessionId,
+        sessionHistory,
+        userMessage: text,
+        response: "Please reply Approved to proceed, Decline to cancel, or Previous Input to reselect tasks.",
+        toolsUsed: [],
+        errors: [],
+        suggestions: ["Approved", "Decline", "Previous Input"],
+      });
+    }
+
+    const selectedIds = Array.isArray(activeDraft.selectedTaskIds) ? activeDraft.selectedTaskIds : [];
+    if (selectedIds.length === 0) {
+      clearTaskDeleteDraft(sessionId);
+      return buildGuidedReply({
+        sessionId,
+        sessionHistory,
+        userMessage: text,
+        response: "I could not find selected tasks to delete. Please start again.",
+        toolsUsed: [],
+        errors: [],
+        suggestions: [],
+      });
+    }
+
+    const toolsUsed = ["delete_tasks"];
+    const errors = [];
+    const deleted = await dispatchTool("delete_tasks", { task_ids: selectedIds }, credentials);
+
+    if (!deleted.success) {
+      if (deleted.error) errors.push(deleted.error);
+      clearTaskDeleteDraft(sessionId);
+      return buildGuidedReply({
+        sessionId,
+        sessionHistory,
+        userMessage: text,
+        response: "I could not delete those tasks right now. Please try again shortly.",
+        toolsUsed,
+        errors,
+        suggestions: [],
+      });
+    }
+
+    toolsUsed.push("get_tasks");
+    const pending = await dispatchTool("get_tasks", { status: "pending" }, credentials);
+    if (!pending.success) {
+      if (pending.error) errors.push(pending.error);
+      clearTaskDeleteDraft(sessionId);
+      return buildGuidedReply({
+        sessionId,
+        sessionHistory,
+        userMessage: text,
+        response: "Tasks deleted. I could not refresh your pending list right now.",
+        toolsUsed,
+        errors,
+        suggestions: [],
+      });
+    }
+
+    const deletedCount = Number(deleted.data?.deleted_count ?? selectedIds.length);
+    const pendingTasks = Array.isArray(pending.data?.tasks) ? pending.data.tasks : [];
+    const response = [
+      `Done. Deleted ${toEmojiNumber(deletedCount)} task(s).`,
+      "",
+      `Here are your pending tasks ${toEmojiNumber(pendingTasks.length)}:`,
+      ...formatPendingTaskList(pendingTasks),
+    ].join("\n");
+
+    clearTaskDeleteDraft(sessionId);
+    return buildGuidedReply({
+      sessionId,
+      sessionHistory,
+      userMessage: text,
+      response,
+      toolsUsed,
+      errors,
+      suggestions: [],
+    });
+  }
+
+  return null;
+}
+
+function buildGuidedReply({ sessionId, sessionHistory, userMessage, response, toolsUsed, errors, suggestions = [] }) {
+  const friendlyResponse = ensureFriendlyEmoji(response);
+
   saveSessionMessages(sessionId, [
     ...sessionHistory,
     { role: "user", content: userMessage },
-    { role: "assistant", content: response },
+    { role: "assistant", content: friendlyResponse },
   ]);
 
   return {
     session_id: sessionId,
-    response,
+    response: friendlyResponse,
     tools_used: toolsUsed,
     errors,
+    suggestions,
   };
+}
+
+function ensureFriendlyEmoji(text) {
+  const content = typeof text === "string" ? text.trim() : "";
+  if (!content) return "🙂";
+
+  // Keep existing emoji-rich responses unchanged.
+  if (containsEmoji(content)) return content;
+
+  return `${content} 🙂`;
+}
+
+function containsEmoji(text) {
+  // Unicode property escapes are supported in modern Node runtimes.
+  return /\p{Extended_Pictographic}/u.test(text);
 }
 
 function cloneTaskDraft(draft) {
@@ -821,6 +1265,18 @@ function clearTaskDraft(sessionId) {
   taskDraftStore.delete(sessionId);
 }
 
+function setTaskDeleteDraft(sessionId, draft) {
+  taskDeleteDraftStore.set(sessionId, draft);
+}
+
+function getTaskDeleteDraft(sessionId) {
+  return taskDeleteDraftStore.get(sessionId) ?? null;
+}
+
+function clearTaskDeleteDraft(sessionId) {
+  taskDeleteDraftStore.delete(sessionId);
+}
+
 function looksLikeTaskCreationIntent(text) {
   if (!text) return false;
   return (
@@ -829,6 +1285,27 @@ function looksLikeTaskCreationIntent(text) {
     /\bnew\b.*\btasks?\b/.test(text) ||
     /\bmake\b.*\btasks?\b/.test(text)
   );
+}
+
+function looksLikeTaskDeleteIntent(text) {
+  if (!text) return false;
+  return (
+    /\bdelete\b.*\btasks?\b/.test(text) ||
+    /\bremove\b.*\btasks?\b/.test(text) ||
+    /\bclear\b.*\btasks?\b/.test(text)
+  );
+}
+
+function parseTaskSelectionNumbers(text, max) {
+  if (typeof text !== "string" || !Number.isInteger(max) || max <= 0) return null;
+  const matches = text.match(/\d+/g);
+  if (!matches || matches.length === 0) return null;
+
+  const numbers = [...new Set(matches.map((m) => parseInt(m, 10)))].filter(
+    (n) => Number.isInteger(n) && n >= 1 && n <= max
+  );
+
+  return numbers.length > 0 ? numbers : null;
 }
 
 function isSkipText(text) {
@@ -841,9 +1318,24 @@ function isCancelText(text) {
   return /^(cancel|stop|abort|nevermind|never mind)$/i.test(text.trim());
 }
 
+function isDeclineText(text) {
+  if (!text) return false;
+  return /^(decline|declined|reject|rejected|nope|discard)$/i.test(text.trim());
+}
+
+function isPreviousInputText(text) {
+  if (!text) return false;
+  return /^(previous input|previous|back|go back|edit previous)$/i.test(text.trim());
+}
+
+function isRetypeTitleText(text) {
+  if (!text) return false;
+  return /^(retype task title|retype title|edit title|change title)$/i.test(text.trim());
+}
+
 function isApprovalText(text) {
   if (!text) return false;
-  return /^(approve|yes|confirm|create|proceed|ok)$/i.test(text.trim());
+  return /^(approved|approve|yes|confirm|create|proceed|ok)$/i.test(text.trim());
 }
 
 function buildCreateTaskArgs(fields) {
@@ -861,14 +1353,70 @@ function buildCreateTaskArgs(fields) {
 function formatTaskPreview(task) {
   const due = task.due_date ?? "No due date";
   const priority = task.priority ?? "medium";
-  const description = task.description?.trim() ? task.description.trim() : "No description";
+  const description = task.description?.trim() ? task.description.trim() : "";
 
-  return [
+  const lines = [
     `• Title: ${task.title ?? "Untitled"}`,
-    `• Description: ${description}`,
     `• Due date: ${due}`,
     `• Priority: ${priority}`,
-  ].join("\n");
+  ];
+
+  if (description) {
+    lines.splice(1, 0, `• Description: ${description}`);
+  }
+
+  return lines.join("\n");
+}
+
+function toEmojiNumber(value) {
+  const safe = Number.isFinite(Number(value)) ? Math.max(0, Math.trunc(Number(value))) : 0;
+  const digits = String(safe);
+  const map = {
+    "0": "0️⃣",
+    "1": "1️⃣",
+    "2": "2️⃣",
+    "3": "3️⃣",
+    "4": "4️⃣",
+    "5": "5️⃣",
+    "6": "6️⃣",
+    "7": "7️⃣",
+    "8": "8️⃣",
+    "9": "9️⃣",
+  };
+  return digits
+    .split("")
+    .map((d) => map[d] ?? d)
+    .join("");
+}
+
+function formatTaskChoice(task) {
+  const due = task?.due_date ?? "no due date";
+  const priority = task?.priority ?? "medium";
+  return `• ${task?.title ?? "Untitled"} (due: ${due}, priority: ${priority})`;
+}
+
+function formatNumberedTaskChoices(tasks) {
+  if (!Array.isArray(tasks) || tasks.length === 0) {
+    return ["• No tasks available."];
+  }
+  return tasks.map((task, idx) => {
+    const due = task?.due_date ?? "no due date";
+    const priority = task?.priority ?? "medium";
+    return `${idx + 1}. ${task?.title ?? "Untitled"} (due: ${due}, priority: ${priority})`;
+  });
+}
+
+function buildTaskSelectionSuggestions(taskCount) {
+  const count = Number.isInteger(taskCount) ? taskCount : 0;
+  const suggestions = [];
+  for (let i = 1; i <= Math.min(3, count); i++) {
+    suggestions.push(String(i));
+  }
+  if (count >= 2) {
+    suggestions.push("1,2");
+  }
+  suggestions.push("Cancel");
+  return suggestions;
 }
 
 function formatPendingTaskList(tasks) {
@@ -904,6 +1452,7 @@ function cleanupExpiredSessions() {
     if (now - entry.updatedAt > SESSION_TTL_MS) {
       sessionStore.delete(id);
       taskDraftStore.delete(id);
+      taskDeleteDraftStore.delete(id);
     }
   }
 }

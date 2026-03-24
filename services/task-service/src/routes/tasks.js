@@ -1,18 +1,11 @@
 import { Router } from "express";
 import { google } from "googleapis";
-import { tasks, nextTaskId, VALID_PRIORITIES, VALID_STATUSES } from "../data/dummy.js";
+const VALID_PRIORITIES = new Set(["low", "medium", "high"]);
+const VALID_STATUSES = new Set(["pending", "completed", "all"]);
 
 const router = Router();
-const TASKS_SOURCE = (process.env.TASKS_SOURCE ?? "google").toLowerCase();
-const TASKS_FALLBACK_TO_DUMMY = /^(1|true|yes)$/i.test(
-  process.env.TASKS_FALLBACK_TO_DUMMY ?? "true"
-);
 const GOOGLE_TASKLIST_ID = process.env.GOOGLE_TASKLIST_ID ?? "@default";
 const PRIORITY_PREFIX = "PAAS_PRIORITY:";
-
-function isUsingGoogleTasks() {
-  return TASKS_SOURCE === "google";
-}
 
 function getTasksClient(req) {
   const authHeader = req.headers.authorization;
@@ -64,17 +57,6 @@ function mapGoogleTaskToPaaS(task) {
     status: task.status === "completed" ? "completed" : "pending",
     created_at: task.updated ?? null,
   };
-}
-
-function shouldFallbackToDummy(err) {
-  if (!TASKS_FALLBACK_TO_DUMMY) return false;
-  if (err?.status === 401 || err?.status === 403) return true;
-
-  const httpStatus = err?.response?.status;
-  if (httpStatus === 401 || httpStatus === 403) return true;
-
-  const code = err?.code;
-  return code === "ECONNREFUSED" || code === "ECONNABORTED" || code === "ETIMEDOUT";
 }
 
 function sendGoogleError(res, err) {
@@ -145,49 +127,60 @@ async function createTaskInGoogle(req) {
   return { status: 201, body: mapGoogleTaskToPaaS(data) };
 }
 
-function getTasksFromDummy(statusFilter) {
-  const filtered =
-    statusFilter === "all"
-      ? tasks
-      : tasks.filter((t) => t.status === statusFilter);
+function parseTaskIds(req) {
+  const taskIds = req.body?.task_ids;
+  if (!Array.isArray(taskIds) || taskIds.length === 0) {
+    return { ok: false, error: "Missing required field: task_ids (non-empty array)." };
+  }
 
-  return { tasks: filtered, total: filtered.length };
+  const sanitized = [...new Set(
+    taskIds
+      .filter((id) => typeof id === "string")
+      .map((id) => id.trim())
+      .filter(Boolean)
+  )];
+
+  if (sanitized.length === 0) {
+    return { ok: false, error: "task_ids must contain at least one valid task ID." };
+  }
+
+  return { ok: true, taskIds: sanitized };
 }
 
-function createTaskInDummy(req) {
-  const { title, description = "", due_date, priority = "medium" } = req.body ?? {};
-
-  if (!title) {
-    return { status: 400, body: { error: "Missing required field: title." } };
+async function deleteTasksInGoogle(req) {
+  const parsed = parseTaskIds(req);
+  if (!parsed.ok) {
+    return { status: 400, body: { error: parsed.error } };
   }
 
-  if (priority && !VALID_PRIORITIES.has(priority)) {
-    return {
-      status: 400,
-      body: { error: `Invalid 'priority' value. Allowed: low, medium, high.` },
-    };
+  const tasksClient = getTasksClient(req);
+  const deleted_ids = [];
+  const not_found_ids = [];
+
+  for (const taskId of parsed.taskIds) {
+    try {
+      await tasksClient.tasks.delete({ tasklist: GOOGLE_TASKLIST_ID, task: taskId });
+      deleted_ids.push(taskId);
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status === 404) {
+        not_found_ids.push(taskId);
+        continue;
+      }
+      throw err;
+    }
   }
 
-  if (due_date && !/^\d{4}-\d{2}-\d{2}$/.test(due_date)) {
-    return {
-      status: 400,
-      body: { error: "Invalid 'due_date' format. Expected: YYYY-MM-DD." },
-    };
-  }
-
-  const newTask = {
-    id: nextTaskId(),
-    title,
-    description,
-    due_date: due_date ?? null,
-    priority,
-    status: "pending",
-    created_at: new Date().toISOString(),
+  return {
+    status: 200,
+    body: {
+      deleted_count: deleted_ids.length,
+      deleted_ids,
+      not_found_ids,
+    },
   };
-
-  tasks.push(newTask);
-  return { status: 201, body: newTask };
 }
+
 
 // ── GET /api/tasks?status=pending|completed|all ───────────────────────────────
 router.get("/", async (req, res) => {
@@ -199,36 +192,30 @@ router.get("/", async (req, res) => {
     });
   }
 
-  if (!isUsingGoogleTasks()) {
-    return res.status(200).json(getTasksFromDummy(statusFilter));
-  }
-
   try {
     const payload = await getTasksFromGoogle(req, statusFilter);
     return res.status(200).json(payload);
   } catch (err) {
-    if (shouldFallbackToDummy(err)) {
-      return res.status(200).json(getTasksFromDummy(statusFilter));
-    }
     return sendGoogleError(res, err);
   }
 });
 
 // ── POST /api/tasks ───────────────────────────────────────────────────────────
 router.post("/", async (req, res) => {
-  if (!isUsingGoogleTasks()) {
-    const result = createTaskInDummy(req);
-    return res.status(result.status).json(result.body);
-  }
-
   try {
     const result = await createTaskInGoogle(req);
     return res.status(result.status).json(result.body);
   } catch (err) {
-    if (shouldFallbackToDummy(err)) {
-      const result = createTaskInDummy(req);
-      return res.status(result.status).json(result.body);
-    }
+    return sendGoogleError(res, err);
+  }
+});
+
+// ── DELETE /api/tasks ─────────────────────────────────────────────────────────
+router.delete("/", async (req, res) => {
+  try {
+    const result = await deleteTasksInGoogle(req);
+    return res.status(result.status).json(result.body);
+  } catch (err) {
     return sendGoogleError(res, err);
   }
 });

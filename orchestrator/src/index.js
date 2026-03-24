@@ -227,17 +227,28 @@ app.post("/api/chat", async (req, res) => {
   }
 
   try {
-    const { session_id: resolvedSessionId, response, tools_used, errors } = await runAgent(
+    const {
+      session_id: resolvedSessionId,
+      response,
+      tools_used,
+      errors,
+      suggestions: guidedSuggestions,
+    } = await runAgent(
       message.trim(),
       credentials,
       session_id
     );
 
+    const suggestions =
+      Array.isArray(guidedSuggestions) && guidedSuggestions.length > 0
+        ? guidedSuggestions
+        : generateSuggestions(tools_used);
+
     const payload = {
       response,
       session_id: resolvedSessionId,
       tools_used,
-      suggestions: generateSuggestions(tools_used),
+      suggestions,
     };
 
     // Include errors array only when there are actual failures, per the API contract.

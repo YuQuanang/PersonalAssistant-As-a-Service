@@ -87,6 +87,24 @@ export const TOOL_DEFINITIONS = [
   {
     type: "function",
     function: {
+      name: "delete_tasks",
+      description: "Delete one or more tasks by their task IDs.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_ids: {
+            type: "array",
+            items: { type: "string" },
+            description: "List of task IDs to delete.",
+          },
+        },
+        required: ["task_ids"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "get_emails",
       description:
         'Fetch emails. Use filter "unread" for unread messages, "read" for read messages, or "all" for all emails.',
@@ -195,6 +213,17 @@ export async function dispatchTool(name, args = {}, credentials) {
         return { success: true, data };
       }
 
+      case "delete_tasks": {
+        const taskIds = Array.isArray(args.task_ids)
+          ? args.task_ids.filter((id) => typeof id === "string" && id.trim() !== "")
+          : [];
+        const { data } = await http.delete(`${SERVICES.task}/api/tasks`, {
+          ...authConfig,
+          data: { task_ids: taskIds },
+        });
+        return { success: true, data };
+      }
+
       case "get_emails": {
         const { data } = await http.get(`${SERVICES.email}/api/emails`, {
           ...authConfig,
@@ -234,6 +263,9 @@ function resolveServiceName(toolName) {
     return "calendar-service";
   }
   if (toolName === "get_tasks" || toolName === "create_task") {
+    return "task-service";
+  }
+  if (toolName === "delete_tasks") {
     return "task-service";
   }
   if (toolName === "get_emails" || toolName === "summarize_email") {

@@ -2,6 +2,10 @@
 
 All services communicate via **JSON over HTTP**. No service shares a database or internal code with another. All bodies use `Content-Type: application/json`.
 
+Authentication note:
+- Calendar, Task, and Email services require a Google OAuth access token in the `Authorization` header.
+- Format: `Authorization: Bearer <access_token>`
+
 ---
 
 ## Port Map
@@ -33,8 +37,8 @@ Check available time slots on a given date.
   "date": "2026-03-10",
   "available_slots": [
     { "start": "09:00", "end": "10:00" },
-    { "start": "11:00", "end": "12:00" },
-    { "start": "14:00", "end": "15:00" }
+    { "start": "10:00", "end": "11:00" },
+    { "start": "15:00", "end": "16:00" }
   ]
 }
 ```
@@ -42,6 +46,11 @@ Check available time slots on a given date.
 **Error Response `400 Bad Request`** — missing or malformed `date`
 ```json
 { "error": "Invalid or missing 'date' query parameter. Expected format: YYYY-MM-DD." }
+```
+
+**Error Response `401 Unauthorized`** — missing or invalid access token
+```json
+{ "error": "Unauthorized. Missing or invalid token." }
 ```
 
 ---
@@ -72,7 +81,7 @@ Book a meeting in an available slot.
 **Success Response `201 Created`**
 ```json
 {
-  "id": "mtg_a1b2c3",
+  "id": "6q9j5n8u2h6qj2h1nqf9t5m3e0",
   "title": "Sync with Alice",
   "date": "2026-03-10",
   "start": "09:00",
@@ -90,6 +99,15 @@ Book a meeting in an available slot.
 **Error Response `400 Bad Request`** — missing required fields
 ```json
 { "error": "Missing required fields: title, date, start, end." }
+```
+
+**Error Response `400 Bad Request`** — invalid time format/range
+```json
+{ "error": "Invalid 'start' or 'end' format. Expected: HH:MM (24-hour)." }
+```
+
+```json
+{ "error": "Invalid time range. 'end' must be later than 'start'." }
 ```
 
 ---
@@ -111,24 +129,31 @@ Retrieve tasks, optionally filtered by status.
 {
   "tasks": [
     {
-      "id": "task_001",
+      "id": "YzA5N2Q2NDU2ZTAzZjMwNQ",
       "title": "Prepare Q1 report",
       "description": "Compile sales and revenue data for Q1.",
       "due_date": "2026-03-15",
       "priority": "high",
-      "status": "pending"
+      "status": "pending",
+      "created_at": "2026-03-09T10:00:00.000Z"
     },
     {
-      "id": "task_002",
+      "id": "YzA5N2Q2NDU2ZTAzZjMwNg",
       "title": "Review PR #42",
       "description": "Review the authentication refactor pull request.",
       "due_date": "2026-03-12",
       "priority": "medium",
-      "status": "pending"
+      "status": "pending",
+      "created_at": "2026-03-09T10:05:00.000Z"
     }
   ],
   "total": 2
 }
+```
+
+**Error Response `401 Unauthorized`**
+```json
+{ "error": "Unauthorized. Missing or invalid token." }
 ```
 
 ---
@@ -157,7 +182,7 @@ Create a new task.
 **Success Response `201 Created`**
 ```json
 {
-  "id": "task_003",
+  "id": "YzA5N2Q2NDU2ZTAzZjMwNw",
   "title": "Schedule dentist appointment",
   "description": "Book appointment for next week.",
   "due_date": "2026-03-16",
@@ -174,6 +199,46 @@ Create a new task.
 
 ---
 
+### `DELETE /api/tasks`
+
+Delete one or more tasks by ID.
+
+**Request Body**
+```json
+{
+  "task_ids": ["YzA5N2Q2NDU2ZTAzZjMwNQ", "YzA5N2Q2NDU2ZTAzZjMwNg"]
+}
+```
+
+| Field      | Type            | Required | Description                          |
+|------------|-----------------|----------|--------------------------------------|
+| `task_ids` | array\<string\> | Yes      | Non-empty list of task IDs to delete |
+
+**Success Response `200 OK`**
+```json
+{
+  "deleted_count": 2,
+  "deleted_ids": ["YzA5N2Q2NDU2ZTAzZjMwNQ", "YzA5N2Q2NDU2ZTAzZjMwNg"],
+  "not_found_ids": []
+}
+```
+
+**Partial Delete Example `200 OK`**
+```json
+{
+  "deleted_count": 1,
+  "deleted_ids": ["YzA5N2Q2NDU2ZTAzZjMwNQ"],
+  "not_found_ids": ["unknown_task_id"]
+}
+```
+
+**Error Response `400 Bad Request`** — invalid payload
+```json
+{ "error": "Missing required field: task_ids (non-empty array)." }
+```
+
+---
+
 ## 3. Email Intelligence Service — `http://localhost:3003`
 
 ### `GET /api/emails`
@@ -182,32 +247,34 @@ Retrieve emails, optionally filtered by read status.
 
 **Query Parameters**
 
-| Param    | Type   | Required | Values              | Default  |
-|----------|--------|----------|---------------------|----------|
-| `filter` | string | No       | `unread` \| `all`   | `unread` |
+| Param    | Type   | Required | Values                         | Default  |
+|----------|--------|----------|--------------------------------|----------|
+| `filter` | string | No       | `unread` \| `read` \| `all`   | `unread` |
 
 **Success Response `200 OK`**
 ```json
 {
+  "filter": "unread",
   "emails": [
     {
-      "id": "email_001",
+      "id": "1975f6ab2e0c1234",
       "from": "boss@company.com",
       "subject": "Q1 Budget Review",
-      "preview": "Hi, please review the attached Q1 budget document and share your feedback...",
-      "received_at": "2026-03-09T08:30:00Z",
-      "read": false
+      "preview": "Hi, please review the attached Q1 budget document and share your feedback..."
     },
     {
-      "id": "email_002",
+      "id": "1975f6ab2e0c5678",
       "from": "notifications@github.com",
       "subject": "PR #42 approved",
-      "preview": "Your pull request has been approved by 2 reviewers.",
-      "received_at": "2026-03-09T09:15:00Z",
-      "read": false
+      "preview": "Your pull request has been approved by 2 reviewers."
     }
   ],
-  "total_unread": 2
+  "shown_count": 2,
+  "total_count": 2,
+  "total_unread": 2,
+  "total_read": 14,
+  "total_all": 16,
+  "count_cap": 100
 }
 ```
 
@@ -231,16 +298,21 @@ Request an AI-generated plain-language summary of a specific email.
 **Success Response `200 OK`**
 ```json
 {
-  "email_id": "email_001",
+  "email_id": "1975f6ab2e0c1234",
   "subject": "Q1 Budget Review",
   "from": "boss@company.com",
-  "summary": "Your boss is requesting that you review the Q1 budget document and provide feedback. No explicit deadline was mentioned, but the tone implies urgency."
+  "received_at": "2026-03-09T08:30:00.000Z",
+  "date_header": "Mon, 09 Mar 2026 08:30:00 +0000",
+  "snippet": "Hi, please review the attached Q1 budget document and share your feedback...",
+  "body_char_count": 7842,
+  "summary": "Hi team, please review the attached Q1 budget and share feedback by Friday...",
+  "body_text": "Hi team, please review the attached Q1 budget and share feedback by Friday..."
 }
 ```
 
-**Error Response `404 Not Found`** — email ID does not exist
+**Error Response `400 Bad Request`** — invalid `email_id`
 ```json
-{ "error": "Email with id 'email_999' not found." }
+{ "error": "Invalid email_id. Use an ID returned by GET /api/emails." }
 ```
 
 **Error Response `400 Bad Request`** — missing `email_id`
@@ -274,7 +346,12 @@ Send a natural language message to the AI agent. The orchestrator determines int
 {
   "response": "You have 2 pending tasks: 'Prepare Q1 report' (due Mar 15, high priority) and 'Review PR #42' (due Mar 12, medium priority). Tomorrow (Mar 10) you have three open slots: 9–10 AM, 11 AM–12 PM, and 2–3 PM.",
   "session_id": "user_session_abc",
-  "tools_used": ["get_pending_tasks", "check_calendar_availability"]
+  "tools_used": ["get_tasks", "check_calendar_availability"],
+  "suggestions": [
+    "Book a meeting in one of those slots",
+    "What are my pending tasks?",
+    "Show my unread emails"
+  ]
 }
 ```
 
@@ -283,7 +360,7 @@ Send a natural language message to the AI agent. The orchestrator determines int
 {
   "response": "I was able to fetch your tasks, but I couldn't reach the Calendar Service right now. Please try again in a moment.",
   "session_id": "user_session_abc",
-  "tools_used": ["get_pending_tasks"],
+  "tools_used": ["get_tasks"],
   "errors": [
     { "service": "calendar-service", "reason": "Service unavailable (connect ECONNREFUSED)" }
   ]
@@ -300,9 +377,29 @@ Send a natural language message to the AI agent. The orchestrator determines int
 {
   "response": "The Calendar Service took too long to respond. I wasn't able to check your availability. Your pending tasks are: ...",
   "session_id": "user_session_abc",
-  "tools_used": ["get_pending_tasks"],
+  "tools_used": ["get_tasks"],
   "errors": [
     { "service": "calendar-service", "reason": "Request timed out after 5000ms" }
   ]
+}
+```
+
+---
+
+### `POST /api/chat/session/end`
+
+Clear one in-memory conversation session.
+
+**Request Body**
+```json
+{
+  "session_id": "user_session_abc"
+}
+```
+
+**Success Response `200 OK`**
+```json
+{
+  "cleared": true
 }
 ```
