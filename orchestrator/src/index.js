@@ -1,7 +1,5 @@
 import express from "express";
 import cookieParser from "cookie-parser";
-import { fileURLToPath } from "node:url";
-import { join, dirname } from "node:path";
 import { exec } from "node:child_process";
 import { PORT } from "./config.js";
 import { runAgent, endSession } from "./agent.js";
@@ -12,7 +10,6 @@ import {
   parseAuthState,
 } from "./auth.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN ?? "http://localhost:5173";
 
 function parseOrigin(value) {
@@ -103,9 +100,6 @@ function buildAuthCookieOptions(req) {
 const app = express();
 app.use(express.json());
 app.use(cookieParser());
-
-// ── Chat UI (static) ──────────────────────────────────────────────────────────
-app.use(express.static(join(__dirname, "../public")));
 
 // ── Authentication ────────────────────────────────────────────────────────────
 
@@ -279,46 +273,6 @@ app.post("/api/chat/session/end", (req, res) => {
   return res.status(200).json({ cleared });
 });
 
-// ── GET /api/ollama-status ────────────────────────────────────────────────────
-// Returns { ready: true } when Ollama is reachable, { ready: false } otherwise.
-app.get("/api/ollama-status", async (_req, res) => {
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2000);
-    const r = await fetch("http://localhost:11434/api/tags", { signal: controller.signal });
-    clearTimeout(timer);
-    return res.json({ ready: r.ok });
-  } catch {
-    return res.json({ ready: false });
-  }
-});
-
-// ── POST /api/start-ollama ────────────────────────────────────────────────────
-// Launches the Ollama macOS app.
-// Strategy:
-//  1. Kill any stale/zombie Ollama processes (leftover from a previous hard kill).
-//     Without this, the new app instance detects a stale socket and silently exits.
-//  2. Remove the stale Unix socket Ollama uses for IPC (if present).
-//  3. Open the app and, if that fails, fall back to `ollama serve` directly.
-app.post("/api/start-ollama", (req, res) => {
-  // Respond immediately — the client polls /api/ollama-status separately.
-  res.json({ message: "Ollama launch requested." });
-
-  const cleanup =
-    "pkill -f '/Applications/Ollama.app' 2>/dev/null; " +
-    "rm -f /tmp/ollama*.sock /tmp/.ollama.lock 2>/dev/null; " +
-    "sleep 0.5";
-
-  const launch =
-    "open /Applications/Ollama.app || " +
-    "(/Applications/Ollama.app/Contents/Resources/ollama serve &>/dev/null &)";
-
-  exec(`${cleanup} && ${launch}`, (err) => {
-    if (err) console.error("[orchestrator] start-ollama exec error:", err.message);
-    else console.log("[orchestrator] Ollama launch command sent.");
-  });
-});
-
 // ── POST /api/shutdown ────────────────────────────────────────────────────────
 // Stops Ollama (works for both manual `ollama serve` and the macOS menu bar app)
 // then exits the orchestrator process, which signals concurrently to stop the
@@ -388,7 +342,6 @@ function generateSuggestions(toolsUsed = []) {
 
 app.listen(PORT, () => {
   console.log(`[orchestrator] Running on http://localhost:${PORT}`);
-  console.log(`[orchestrator] Chat UI        → http://localhost:${PORT}`);
   console.log(`[orchestrator] Chat endpoint  → POST http://localhost:${PORT}/api/chat`);
   console.log(`[orchestrator] LLM backend    → Ollama (${process.env.OLLAMA_MODEL ?? "llama3.1"})`);
 });
