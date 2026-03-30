@@ -124,11 +124,13 @@ Example questions to try:
 | Question | Tools invoked |
 |---|---|
 | `"What are my pending tasks?"` | `get_tasks` |
-| `"Do I have any free slots on 2026-03-10?"` | `check_calendar_availability` |
-| `"Book a meeting called Standup on March 11 at 9am"` | `check_calendar_availability` → `book_meeting` |
+| `"Do I have any events for today?"` | `list_calendar_events` |
+| `"Create a calendar event called Standup on 2026-03-11 from 09:00 to 10:00"` | `create_calendar_event` |
+| `"Get calendar event abc123"` | `get_calendar_event` |
+| `"Delete calendar event abc123"` | `delete_calendar_event` |
 | `"Summarise my unread emails"` | `get_emails` → `summarize_email` |
 | `"Create a task to review the Q2 roadmap, high priority"` | `create_task` |
-| `"What are my tasks AND do I have time tomorrow?"` | `get_tasks` + `check_calendar_availability` (parallel) |
+| `"What are my tasks AND do I have any events for today?"` | `get_tasks` + `list_calendar_events` (parallel) |
 
 ### Configuration
 

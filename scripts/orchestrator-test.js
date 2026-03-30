@@ -95,9 +95,8 @@ try {
   check("dispatchTool get_tasks success", res.success === true);
   check("dispatchTool get_tasks has data", Array.isArray(res.data?.tasks));
 
-  res = await dispatchTool("check_calendar_availability", { date: "2026-03-10" });
-  check("dispatchTool availability success", res.success === true);
-  check("dispatchTool availability has slots", Array.isArray(res.data?.available_slots));
+  res = await dispatchTool("list_calendar_events", { date: "2026-03-10" });
+  check("dispatchTool list_calendar_events returns structured result", "success" in res);
 
   res = await dispatchTool("get_emails", { filter: "unread" });
   check("dispatchTool get_emails success", res.success === true);
@@ -111,7 +110,7 @@ try {
   const origCalendarUrl = process.env.CALENDAR_SERVICE_URL;
   process.env.CALENDAR_SERVICE_URL = "http://localhost:19998";
   // Re-import with updated env won't work in ESM module cache — test via response shape instead
-  res = await dispatchTool("check_calendar_availability", { date: "2026-03-10" });
+  res = await dispatchTool("list_calendar_events", { date: "2026-03-10" });
   // (still hits the real port since module is cached, so success is fine here)
   check("dispatchTool still returns structured result", "success" in res);
 

@@ -304,30 +304,38 @@ function generateSuggestions(toolsUsed = []) {
   if (used.has("get_tasks")) {
     suggestions.add("Create a new task");
     suggestions.add("Show my completed tasks");
-    suggestions.add("Do I have free time today?");
+    suggestions.add("Create a calendar event for today");
   }
   if (used.has("create_task")) {
     suggestions.add("Show all my pending tasks");
-    suggestions.add("Check my calendar availability today");
+    suggestions.add("Create a calendar event");
   }
-  if (used.has("check_calendar_availability")) {
-    suggestions.add("Book a meeting in one of those slots");
+  if (used.has("create_calendar_event")) {
+    suggestions.add("Get that calendar event");
     suggestions.add("What are my pending tasks?");
     suggestions.add("Show my unread emails");
   }
-  if (used.has("book_meeting")) {
-    suggestions.add("Check availability for another day");
+  if (used.has("list_calendar_events")) {
+    suggestions.add("Create a calendar event for today");
+    suggestions.add("What are my pending tasks?");
+  }
+  if (used.has("get_calendar_event")) {
+    suggestions.add("Delete that calendar event");
+    suggestions.add("Show my pending tasks");
+  }
+  if (used.has("delete_calendar_event")) {
+    suggestions.add("Create another calendar event");
     suggestions.add("Show my pending tasks");
   }
   if (used.has("get_emails")) {
     suggestions.add("Summarise the first email");
     suggestions.add("What are my pending tasks?");
-    suggestions.add("Do I have any free time today?");
+    suggestions.add("Create a calendar event today");
   }
   if (used.has("summarize_email")) {
     suggestions.add("Create a task from this email");
     suggestions.add("Show my other unread emails");
-    suggestions.add("Check my calendar availability");
+    suggestions.add("Create a calendar event");
   }
 
   // Fallback when no tools were used (e.g. small talk / greeting)

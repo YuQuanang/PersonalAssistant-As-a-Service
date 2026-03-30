@@ -7,33 +7,39 @@ export const TOOL_DEFINITIONS = [
   {
     type: "function",
     function: {
-      name: "check_calendar_availability",
-      description: "Check available meeting slots on a specific date.",
+      name: "list_calendar_events",
+      description: "List calendar events for a specific date. Defaults to today in GMT+8 when no date is provided.",
       parameters: {
         type: "object",
         properties: {
           date: {
             type: "string",
-            description: "Target date in YYYY-MM-DD format.",
+            description: "Optional target date in YYYY-MM-DD format.",
           },
         },
-        required: ["date"],
+        required: [],
       },
     },
   },
   {
     type: "function",
     function: {
-      name: "book_meeting",
-      description:
-        "Book a meeting on the calendar. Always call check_calendar_availability first to confirm the slot is free.",
+      name: "create_calendar_event",
+      description: "Create a new calendar event.",
       parameters: {
         type: "object",
         properties: {
-          title: { type: "string", description: "Meeting title." },
-          date: { type: "string", description: "Date in YYYY-MM-DD format." },
+          title: { type: "string", description: "Event title." },
+          date: {
+            type: "string",
+            description: "Event date in YYYY-MM-DD format.",
+          },
           start: { type: "string", description: "Start time in HH:MM (24-hour)." },
           end: { type: "string", description: "End time in HH:MM (24-hour)." },
+          description: {
+            type: "string",
+            description: "Optional additional event details.",
+          },
           attendees: {
             type: "array",
             items: { type: "string" },
@@ -41,6 +47,40 @@ export const TOOL_DEFINITIONS = [
           },
         },
         required: ["title", "date", "start", "end"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_calendar_event",
+      description: "Get a calendar event by its event ID.",
+      parameters: {
+        type: "object",
+        properties: {
+          event_id: {
+            type: "string",
+            description: "The calendar event ID.",
+          },
+        },
+        required: ["event_id"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_calendar_event",
+      description: "Delete a calendar event by its event ID.",
+      parameters: {
+        type: "object",
+        properties: {
+          event_id: {
+            type: "string",
+            description: "The calendar event ID.",
+          },
+        },
+        required: ["event_id"],
       },
     },
   },
@@ -176,22 +216,47 @@ export async function dispatchTool(name, args = {}, credentials) {
     const authConfig = await getAuthHeaders(credentials);
 
     switch (name) {
-      case "check_calendar_availability": {
-        const { data } = await http.get(
-          `${SERVICES.calendar}/api/availability`,
-          { ...authConfig, params: { date: args.date } }
+      case "list_calendar_events": {
+        const params = {};
+        if (typeof args.date === "string" && args.date.trim() !== "") {
+          params.date = args.date;
+        }
+        const { data } = await http.get(`${SERVICES.calendar}/api/events`, {
+          ...authConfig,
+          params,
+        });
+        return { success: true, data };
+      }
+
+      case "create_calendar_event": {
+        const { data } = await http.post(
+          `${SERVICES.calendar}/api/events`,
+          {
+            title: args.title,
+            date: args.date,
+            start: args.start,
+            end: args.end,
+            description: args.description ?? "",
+            attendees: Array.isArray(args.attendees) ? args.attendees : [],
+          },
+          authConfig
         );
         return { success: true, data };
       }
 
-      case "book_meeting": {
-        const { data } = await http.post(`${SERVICES.calendar}/api/meetings`, {
-          title: args.title,
-          date: args.date,
-          start: args.start,
-          end: args.end,
-          attendees: Array.isArray(args.attendees) ? args.attendees : [],
-        }, authConfig);
+      case "get_calendar_event": {
+        const { data } = await http.get(
+          `${SERVICES.calendar}/api/events/${encodeURIComponent(args.event_id)}`,
+          authConfig
+        );
+        return { success: true, data };
+      }
+
+      case "delete_calendar_event": {
+        const { data } = await http.delete(
+          `${SERVICES.calendar}/api/events/${encodeURIComponent(args.event_id)}`,
+          authConfig
+        );
         return { success: true, data };
       }
 
@@ -259,7 +324,12 @@ export async function dispatchTool(name, args = {}, credentials) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function resolveServiceName(toolName) {
-  if (toolName === "check_calendar_availability" || toolName === "book_meeting") {
+  if (
+    toolName === "list_calendar_events" ||
+    toolName === "create_calendar_event" ||
+    toolName === "get_calendar_event" ||
+    toolName === "delete_calendar_event"
+  ) {
     return "calendar-service";
   }
   if (toolName === "get_tasks" || toolName === "create_task") {

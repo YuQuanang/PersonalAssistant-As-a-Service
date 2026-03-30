@@ -23,14 +23,17 @@ const LLM_TOOL_DEFINITIONS = TOOL_DEFINITIONS.filter(
 );
 const VALID_LLM_TOOL_NAMES = new Set(LLM_TOOL_DEFINITIONS.map((t) => t.function.name));
 
+const CALENDAR_TIMEZONE_LABEL = "GMT+8";
+const CALENDAR_OFFSET_MINUTES = 8 * 60;
+
 // Today's date injected once so the model always has accurate temporal context.
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = getCurrentDateInCalendarOffset();
 
 const SYSTEM_PROMPT = `\
-You are PAaaS, a friendly and helpful personal assistant. Today's date is ${TODAY}.
+You are PAaaS, a friendly and helpful personal assistant. Today's date is ${TODAY} in ${CALENDAR_TIMEZONE_LABEL}.
 
 You have access to three services via tools:
-  • Calendar Service — check free slots and book meetings
+  • Calendar Service — list, create, retrieve, and delete calendar events
   • Task Service     — list pending tasks (task creation/deletion are handled via guided multi-step flow)
   • Email Service    — list unread emails and summarize specific ones
 
@@ -40,7 +43,7 @@ You have access to three services via tools:
 - Include friendly, relevant emojis naturally in every response (for example: ✅ for tasks, 📅 for calendar, 📧 for emails, 🙂 for neutral confirmations).
 - Format lists with bullet points (•). Use bold (**text**) to highlight key names, dates, or priorities.
 - For tasks: always mention the title, due date, and priority.
-- For calendar slots: group them naturally (e.g. "You have three open slots: 9–10 AM, 11 AM–12 PM, and 2–3 PM").
+- For calendar events: mention the title, date, time range, and status when that information is available, and refer to times in ${CALENDAR_TIMEZONE_LABEL}.
 - For emails: give a one-sentence human summary per email, not a raw subject line dump.
 - For a single-email summarize request: provide a detailed brief with:
   • Sender, subject, and received time
@@ -48,13 +51,13 @@ You have access to three services via tools:
   • Any action items requested
   • Any deadlines / dates mentioned
   • A short suggested next step
-- End multi-item responses with a brief, helpful follow-up offer (e.g. "Would you like me to book one of those slots?").
+- End multi-item responses with a brief, helpful follow-up offer (e.g. "Would you like me to create a calendar event for one of those times?").
 - Keep answers focused — no unnecessary padding or repetition.
 
 ── STRICT RULES ─────────────────────────────────────────────────────────────────
-1. ALWAYS use tools to fetch real data before answering. Never invent dates, task names, email subjects, or time slots.
-2. For compound questions (e.g. "show my tasks AND check tomorrow's availability"), call all relevant tools.
-3. When booking a meeting, call check_calendar_availability first; only book a slot confirmed as free.
+1. ALWAYS use tools to fetch real data before answering. Never invent dates, task names, email subjects, calendar events, or time slots.
+2. For compound questions (e.g. "show my tasks AND list my calendar events for today"), call all relevant tools.
+3. Use list_calendar_events for date-based event queries, create_calendar_event for new events, get_calendar_event to retrieve an existing event, and delete_calendar_event to remove an event.
 4. If a tool returns an error, clearly tell the user what you could not retrieve, then share any data you did get.
 5. Never expose raw JSON, HTTP status codes, or internal IDs (like "email_001") to the user.
 6. If the user asks to summarize an email by order (e.g. "first email"), call get_emails first, select the matching item by index, then call summarize_email.
@@ -381,20 +384,31 @@ function extractPlannedToolCall(text) {
 async function resolveToolArgs(name, args, credentials, toolsUsed, errors, userMessage = "") {
   const safeArgs = args && typeof args === "object" ? args : {};
 
-  if (name === "check_calendar_availability") {
-    const date = normalizeDate(safeArgs.date);
+  if (name === "list_calendar_events") {
+    const date =
+      typeof safeArgs.date === "string" && safeArgs.date.trim() !== ""
+        ? normalizeDate(safeArgs.date)
+        : TODAY;
     return date ? { date } : null;
   }
 
-  if (name === "book_meeting") {
+  if (name === "create_calendar_event") {
     const title = typeof safeArgs.title === "string" ? safeArgs.title.trim() : "";
     const date = normalizeDate(safeArgs.date);
     const start = normalizeTime(safeArgs.start);
     const end = normalizeTime(safeArgs.end);
     if (!title || !date || !start || !end) return null;
 
+    const description =
+      typeof safeArgs.description === "string" ? safeArgs.description.trim() : "";
     const attendees = normalizeAttendees(safeArgs.attendees);
-    return { title, date, start, end, attendees };
+    return { title, date, start, end, description, attendees };
+  }
+
+  if (name === "get_calendar_event" || name === "delete_calendar_event") {
+    const eventId =
+      typeof safeArgs.event_id === "string" ? safeArgs.event_id.trim() : "";
+    return looksLikeCalendarEventId(eventId) ? { event_id: eventId } : null;
   }
 
   if (name === "get_tasks") {
@@ -480,25 +494,35 @@ function looksLikeEmailMessageId(id) {
   return typeof id === "string" && /^[a-f0-9]{8,}$/i.test(id);
 }
 
+function looksLikeCalendarEventId(id) {
+  return typeof id === "string" && /^[^\s/?#]+$/.test(id);
+}
+
 function normalizeEnum(value, allowed, fallback) {
   const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
   return allowed.includes(normalized) ? normalized : fallback;
+}
+
+function getCurrentDateInCalendarOffset() {
+  return shiftDateToCalendarOffset(new Date()).toISOString().slice(0, 10);
+}
+
+function shiftDateToCalendarOffset(date) {
+  return new Date(date.getTime() + CALENDAR_OFFSET_MINUTES * 60 * 1000);
+}
+
+function addDaysToIsoDate(date, days) {
+  const base = new Date(`${date}T00:00:00.000Z`);
+  base.setUTCDate(base.getUTCDate() + days);
+  return base.toISOString().slice(0, 10);
 }
 
 function normalizeDate(value) {
   if (typeof value !== "string") return null;
   const v = value.trim().toLowerCase();
   if (v === "today") return TODAY;
-  if (v === "tomorrow") {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    return d.toISOString().slice(0, 10);
-  }
-  if (v === "next week") {
-    const d = new Date();
-    d.setDate(d.getDate() + 7);
-    return d.toISOString().slice(0, 10);
-  }
+  if (v === "tomorrow") return addDaysToIsoDate(TODAY, 1);
+  if (v === "next week") return addDaysToIsoDate(TODAY, 7);
   return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
 }
 
@@ -568,7 +592,12 @@ function parseRequestedEmailIndex(text) {
 }
 
 function resolveServiceName(toolName) {
-  if (toolName === "check_calendar_availability" || toolName === "book_meeting") {
+  if (
+    toolName === "list_calendar_events" ||
+    toolName === "create_calendar_event" ||
+    toolName === "get_calendar_event" ||
+    toolName === "delete_calendar_event"
+  ) {
     return "calendar-service";
   }
   if (toolName === "get_tasks" || toolName === "create_task" || toolName === "delete_tasks") {

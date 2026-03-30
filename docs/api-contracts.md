@@ -19,45 +19,51 @@ Authentication note:
 
 ---
 
-## 1. Calendar Scheduling Service — `http://localhost:3001`
+## 1. Calendar Event Service � `http://localhost:3001`
 
-### `GET /api/availability`
+### `GET /api/events`
 
-Check available time slots on a given date.
+List calendar events for a specific date. If `date` is omitted, the service defaults to the current date in `GMT+8`.
 
 **Query Parameters**
 
-| Param  | Type   | Required | Description              |
-|--------|--------|----------|--------------------------|
-| `date` | string | Yes      | Target date `YYYY-MM-DD` |
+| Param  | Type   | Required | Description                         |
+|--------|--------|----------|-------------------------------------|
+| `date` | string | No       | Target date `YYYY-MM-DD` in `GMT+8` |
 
 **Success Response `200 OK`**
 ```json
 {
   "date": "2026-03-10",
-  "available_slots": [
-    { "start": "09:00", "end": "10:00" },
-    { "start": "10:00", "end": "11:00" },
-    { "start": "15:00", "end": "16:00" }
-  ]
+  "time_zone": "GMT+8",
+  "events": [
+    {
+      "id": "6q9j5n8u2h6qj2h1nqf9t5m3e0",
+      "title": "Sync with Alice",
+      "description": "Weekly project sync",
+      "date": "2026-03-10",
+      "start": "09:00",
+      "end": "10:00",
+      "attendees": ["alice@example.com"],
+      "status": "confirmed",
+      "time_zone": "GMT+8",
+      "html_link": "https://calendar.google.com/calendar/event?eid=..."
+    }
+  ],
+  "total": 1
 }
 ```
 
-**Error Response `400 Bad Request`** — missing or malformed `date`
+**Error Response `400 Bad Request`**
 ```json
-{ "error": "Invalid or missing 'date' query parameter. Expected format: YYYY-MM-DD." }
-```
-
-**Error Response `401 Unauthorized`** — missing or invalid access token
-```json
-{ "error": "Unauthorized. Missing or invalid token." }
+{ "error": "Invalid 'date' query parameter. Expected format: YYYY-MM-DD." }
 ```
 
 ---
 
-### `POST /api/meetings`
+### `POST /api/events`
 
-Book a meeting in an available slot.
+Create a calendar event.
 
 **Request Body**
 ```json
@@ -66,48 +72,123 @@ Book a meeting in an available slot.
   "date": "2026-03-10",
   "start": "09:00",
   "end": "10:00",
+  "description": "Weekly project sync",
   "attendees": ["alice@example.com"]
 }
 ```
 
-| Field       | Type            | Required | Description                     |
-|-------------|-----------------|----------|---------------------------------|
-| `title`     | string          | Yes      | Meeting title                   |
-| `date`      | string          | Yes      | Date `YYYY-MM-DD`               |
-| `start`     | string          | Yes      | Start time `HH:MM` (24h)        |
-| `end`       | string          | Yes      | End time `HH:MM` (24h)          |
-| `attendees` | array\<string\> | No       | List of attendee email addresses |
+| Field         | Type            | Required | Description                      |
+|---------------|-----------------|----------|----------------------------------|
+| `title`       | string          | Yes      | Event title                      |
+| `date`        | string          | Yes      | Date `YYYY-MM-DD`                |
+| `start`       | string          | Yes      | Start time `HH:MM` (24h)         |
+| `end`         | string          | Yes      | End time `HH:MM` (24h)           |
+| `description` | string          | No       | Additional event details         |
+| `attendees`   | array\<string\> | No       | List of attendee email addresses |
 
 **Success Response `201 Created`**
 ```json
 {
   "id": "6q9j5n8u2h6qj2h1nqf9t5m3e0",
   "title": "Sync with Alice",
+  "description": "Weekly project sync",
   "date": "2026-03-10",
   "start": "09:00",
   "end": "10:00",
   "attendees": ["alice@example.com"],
-  "status": "confirmed"
+  "status": "confirmed",
+  "time_zone": "GMT+8",
+  "html_link": "https://calendar.google.com/calendar/event?eid=..."
 }
 ```
 
-**Error Response `409 Conflict`** — slot already booked
+**Error Response `409 Conflict`** � slot already booked
 ```json
-{ "error": "The requested time slot (09:00–10:00) is already booked." }
+{ "error": "The requested time slot (09:00-10:00) is already booked." }
 ```
 
-**Error Response `400 Bad Request`** — missing required fields
+**Error Response `400 Bad Request`** � missing required fields
 ```json
 { "error": "Missing required fields: title, date, start, end." }
 ```
 
-**Error Response `400 Bad Request`** — invalid time format/range
+**Error Response `400 Bad Request`** � invalid time format/range
 ```json
 { "error": "Invalid 'start' or 'end' format. Expected: HH:MM (24-hour)." }
 ```
 
 ```json
 { "error": "Invalid time range. 'end' must be later than 'start'." }
+```
+
+---
+
+### `GET /api/events/:eventId`
+
+Retrieve a calendar event by its event ID.
+
+**Path Parameters**
+
+| Param     | Type   | Required | Description              |
+|-----------|--------|----------|--------------------------|
+| `eventId` | string | Yes      | Google Calendar event ID |
+
+**Success Response `200 OK`**
+```json
+{
+  "id": "6q9j5n8u2h6qj2h1nqf9t5m3e0",
+  "title": "Sync with Alice",
+  "description": "Weekly project sync",
+  "date": "2026-03-10",
+  "start": "09:00",
+  "end": "10:00",
+  "attendees": ["alice@example.com"],
+  "status": "confirmed",
+  "time_zone": "GMT+8",
+  "html_link": "https://calendar.google.com/calendar/event?eid=..."
+}
+```
+
+**Error Response `400 Bad Request`**
+```json
+{ "error": "Invalid or missing 'eventId' path parameter." }
+```
+
+**Error Response `404 Not Found`**
+```json
+{ "error": "Calendar event not found." }
+```
+
+---
+
+### `DELETE /api/events/:eventId`
+
+Delete a calendar event by its event ID.
+
+**Path Parameters**
+
+| Param     | Type   | Required | Description              |
+|-----------|--------|----------|--------------------------|
+| `eventId` | string | Yes      | Google Calendar event ID |
+
+**Success Response `200 OK`**
+```json
+{
+  "id": "6q9j5n8u2h6qj2h1nqf9t5m3e0",
+  "deleted": true,
+  "status": "cancelled",
+  "time_zone": "GMT+8"
+}
+```
+
+**Error Response `400 Bad Request`**
+```json
+{ "error": "Invalid or missing 'eventId' path parameter." }
+```
+
+**Error Response `404 Not Found`**
+```json
+{ "error": "Calendar event not found." }
 ```
 
 ---
@@ -331,7 +412,7 @@ Send a natural language message to the AI agent. The orchestrator determines int
 **Request Body**
 ```json
 {
-  "message": "What are my pending tasks and do I have any free time tomorrow?",
+  "message": "What are my pending tasks and do I have any events for today?",
   "session_id": "user_session_abc"
 }
 ```
@@ -344,11 +425,11 @@ Send a natural language message to the AI agent. The orchestrator determines int
 **Success Response `200 OK`**
 ```json
 {
-  "response": "You have 2 pending tasks: 'Prepare Q1 report' (due Mar 15, high priority) and 'Review PR #42' (due Mar 12, medium priority). Tomorrow (Mar 10) you have three open slots: 9–10 AM, 11 AM–12 PM, and 2–3 PM.",
+  "response": "You have 2 pending tasks: 'Prepare Q1 report' (due Mar 15, high priority) and 'Review PR #42' (due Mar 12, medium priority). You have 2 calendar events today in GMT+8: **Standup** from 9:00 AM to 10:00 AM and **Client Call** from 2:00 PM to 2:30 PM.",
   "session_id": "user_session_abc",
-  "tools_used": ["get_tasks", "check_calendar_availability"],
+  "tools_used": ["get_tasks", "list_calendar_events"],
   "suggestions": [
-    "Book a meeting in one of those slots",
+    "Create a calendar event for today",
     "What are my pending tasks?",
     "Show my unread emails"
   ]
@@ -375,7 +456,7 @@ Send a natural language message to the AI agent. The orchestrator determines int
 **Error Response `504 Gateway Timeout`** — downstream service took too long
 ```json
 {
-  "response": "The Calendar Service took too long to respond. I wasn't able to check your availability. Your pending tasks are: ...",
+  "response": "The Calendar Service took too long to respond. I wasn't able to retrieve your calendar events for today. Your pending tasks are: ...",
   "session_id": "user_session_abc",
   "tools_used": ["get_tasks"],
   "errors": [
@@ -403,3 +484,7 @@ Clear one in-memory conversation session.
   "cleared": true
 }
 ```
+
+
+
+
