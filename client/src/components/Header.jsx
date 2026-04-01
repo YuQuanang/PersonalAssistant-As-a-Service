@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import useAuth from "../hooks/useAuth";
-import { shutdownAll } from "../services/api";
 import AccountDropdown from "./AccountDropdown";
 import styles from "./Header.module.css";
 
@@ -24,15 +23,6 @@ export default function Header() {
     return () => document.removeEventListener("click", onDocClick);
   }, []);
 
-  async function onShutdown() {
-    const ok = window.confirm("This will stop all PAaaS services and quit Ollama. Continue?");
-    if (!ok) return;
-    try {
-      await shutdownAll();
-    } catch {
-      // no-op
-    }
-  }
 
   const owner = user?.name ?? "Not signed in";
   const canShowAvatar = !!user?.picture && !avatarBroken;
@@ -83,9 +73,6 @@ export default function Header() {
           }}
         />
 
-        <button type="button" className={styles.shutdownBtn} onClick={onShutdown}>
-          Shut down
-        </button>
       </div>
     </header>
   );

@@ -273,24 +273,6 @@ app.post("/api/chat/session/end", (req, res) => {
   return res.status(200).json({ cleared });
 });
 
-// ── POST /api/shutdown ────────────────────────────────────────────────────────
-// Stops Ollama (works for both manual `ollama serve` and the macOS menu bar app)
-// then exits the orchestrator process, which signals concurrently to stop the
-// other three services.
-app.post("/api/shutdown", (_req, res) => {
-  res.json({ message: "Shutting down…" });
-  console.log("[orchestrator] Shutdown requested — stopping Ollama and all services.");
-  // Two Ollama processes run on macOS:
-  //  1. The menu bar GUI app:  /Applications/Ollama.app/Contents/MacOS/Ollama
-  //  2. The backend server:    .../Resources/ollama serve
-  // We kill both by matching the app bundle path, then fall back to pkill.
-  exec(
-    "pkill -f '/Applications/Ollama.app' 2>/dev/null; osascript -e 'quit app \"Ollama\"' 2>/dev/null; true",
-    () => {
-      // Give the HTTP response a moment to flush before exiting.
-      setTimeout(() => process.exit(0), 300);
-    });
-});
 
 // ── 404 catch-all ─────────────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: "Route not found." }));
