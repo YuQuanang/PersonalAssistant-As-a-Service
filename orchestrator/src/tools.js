@@ -12,9 +12,13 @@ export const TOOL_DEFINITIONS = [
       parameters: {
         type: "object",
         properties: {
-          date: {
+          start_date: {
             type: "string",
-            description: "Optional target date in YYYY-MM-DD format.",
+            description: "Optional start date in YYYY-MM-DD format.",
+          },
+          end_date: {
+            type: "string",
+            description: "Optional end date in YYYY-MM-DD format to query a range of dates.",
           },
         },
         required: [],
@@ -40,10 +44,9 @@ export const TOOL_DEFINITIONS = [
             type: "string",
             description: "Optional additional event details.",
           },
-          attendees: {
-            type: "array",
-            items: { type: "string" },
-            description: "Optional list of attendee email addresses.",
+          location: {
+            type: "string",
+            description: "Optional location of the event.",
           },
         },
         required: ["title", "date", "start", "end"],
@@ -218,8 +221,11 @@ export async function dispatchTool(name, args = {}, credentials) {
     switch (name) {
       case "list_calendar_events": {
         const params = {};
-        if (typeof args.date === "string" && args.date.trim() !== "") {
-          params.date = args.date;
+        if (typeof args.start_date === "string" && args.start_date.trim() !== "") {
+          params.startDate = args.start_date;
+        }
+        if (typeof args.end_date === "string" && args.end_date.trim() !== "") {
+          params.endDate = args.end_date;
         }
         const { data } = await http.get(`${SERVICES.calendar}/api/events`, {
           ...authConfig,
@@ -237,7 +243,7 @@ export async function dispatchTool(name, args = {}, credentials) {
             start: args.start,
             end: args.end,
             description: args.description ?? "",
-            attendees: Array.isArray(args.attendees) ? args.attendees : [],
+            location: args.location ?? "",
           },
           authConfig
         );

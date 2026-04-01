@@ -68,6 +68,8 @@ You have access to three services via tools:
 11. If get_emails fails or times out, do not fabricate any email list or sender names. State that retrieval failed and ask to retry.
 12. For summarize_email results, base the summary only on tool fields (subject, from, received_at/date_header, snippet, summary/body_text). Do not invent details.
 13. If any email total field says "more than 100", explicitly phrase it as "you have more than 100 [read/unread/all] emails".
+14. When asked to delete a calendar event, you MUST first call list_calendar_events. Once it returns the events, locate the correct event and immediately call delete_calendar_event using its exact 'id' as the 'event_id'. Do NOT call get_calendar_event as an intermediate step.
+15. NEVER offer or ask to set reminders, timers, or alarms, because you do not have the tools to do so. Only offer follow-up actions that directly match your tools (like creating tasks or events).
 
 `;
 
@@ -385,11 +387,15 @@ async function resolveToolArgs(name, args, credentials, toolsUsed, errors, userM
   const safeArgs = args && typeof args === "object" ? args : {};
 
   if (name === "list_calendar_events") {
-    const date =
-      typeof safeArgs.date === "string" && safeArgs.date.trim() !== ""
-        ? normalizeDate(safeArgs.date)
+    const start_date =
+      typeof safeArgs.start_date === "string" && safeArgs.start_date.trim() !== ""
+        ? normalizeDate(safeArgs.start_date)
         : TODAY;
-    return date ? { date } : null;
+    const end_date =
+      typeof safeArgs.end_date === "string" && safeArgs.end_date.trim() !== ""
+        ? normalizeDate(safeArgs.end_date)
+        : "";
+    return start_date ? { start_date, end_date } : null;
   }
 
   if (name === "create_calendar_event") {
@@ -401,8 +407,9 @@ async function resolveToolArgs(name, args, credentials, toolsUsed, errors, userM
 
     const description =
       typeof safeArgs.description === "string" ? safeArgs.description.trim() : "";
-    const attendees = normalizeAttendees(safeArgs.attendees);
-    return { title, date, start, end, description, attendees };
+    const location =
+      typeof safeArgs.location === "string" ? safeArgs.location.trim() : "";
+    return { title, date, start, end, description, location };
   }
 
   if (name === "get_calendar_event" || name === "delete_calendar_event") {
@@ -552,14 +559,6 @@ function normalizeTime(value) {
   return `${String(hour).padStart(2, "0")}:${minute}`;
 }
 
-function normalizeAttendees(value) {
-  if (!value) return [];
-  const arr = Array.isArray(value) ? value : [value];
-  return arr
-    .filter((v) => typeof v === "string")
-    .map((v) => v.trim())
-    .filter((v) => v.length > 0);
-}
 
 function parseRequestedEmailIndex(text) {
   if (typeof text !== "string") return null;
