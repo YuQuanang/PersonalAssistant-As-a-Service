@@ -314,7 +314,7 @@ function generateSuggestions(toolsUsed = []) {
     suggestions.add("What are my pending tasks?");
     suggestions.add("Create a calendar event today");
   }
-  if (used.has("summarize_email")) {
+  if (used.has("read_email")) {
     suggestions.add("Create a task from this email");
     suggestions.add("Show my other unread emails");
     suggestions.add("Create a calendar event");

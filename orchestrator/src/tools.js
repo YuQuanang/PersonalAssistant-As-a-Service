@@ -167,9 +167,9 @@ export const TOOL_DEFINITIONS = [
   {
     type: "function",
     function: {
-      name: "summarize_email",
+      name: "read_email",
       description:
-        "Get a plain-language summary of a specific email. Prefer a real email_id from get_emails. If user refers by order (e.g. 1st/8th), pass email_index as a 1-based position.",
+        "Fetch the full content of a specific email. Prefer a real email_id from get_emails. If user refers by order (e.g. 1st/8th), pass email_index as a 1-based position.",
       parameters: {
         type: "object",
         properties: {
@@ -304,10 +304,9 @@ export async function dispatchTool(name, args = {}, credentials) {
         return { success: true, data };
       }
 
-      case "summarize_email": {
-        const { data } = await http.post(
-          `${SERVICES.email}/api/emails/summarize`,
-          { email_id: args.email_id },
+      case "read_email": {
+        const { data } = await http.get(
+          `${SERVICES.email}/api/emails/${encodeURIComponent(args.email_id)}`,
           { ...authConfig, timeout: EMAIL_TOOL_TIMEOUT_MS }
         );
         return { success: true, data };
@@ -344,7 +343,7 @@ function resolveServiceName(toolName) {
   if (toolName === "delete_tasks") {
     return "task-service";
   }
-  if (toolName === "get_emails" || toolName === "summarize_email") {
+  if (toolName === "get_emails" || toolName === "read_email") {
     return "email-service";
   }
   return "unknown-service";

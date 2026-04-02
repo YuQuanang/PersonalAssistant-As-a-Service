@@ -87,9 +87,9 @@ export async function handleListEmails(req, res) {
   }
 }
 
-// ── POST /api/emails/summarize ────────────────────────────────────────────────
-export async function handleSummarizeEmail(req, res) {
-  const { email_id } = req.body ?? {};
+// ── GET /api/emails/:emailId ──────────────────────────────────────────────────
+export async function handleGetEmail(req, res) {
+  const { emailId: email_id } = req.params;
 
   if (!email_id) {
     return res.status(400).json({ error: "Missing required field: email_id." });

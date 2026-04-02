@@ -6,7 +6,7 @@ const router = Router();
 // GET /api/emails?filter=unread|read|all
 router.get("/", emailController.handleListEmails);
 
-// POST /api/emails/summarize
-router.post("/summarize", emailController.handleSummarizeEmail);
+// GET /api/emails/:emailId
+router.get("/:emailId", emailController.handleGetEmail);
 
 export default router;
