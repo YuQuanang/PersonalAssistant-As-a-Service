@@ -29,14 +29,8 @@ const VALID_LLM_TOOL_NAMES = new Set(LLM_TOOL_DEFINITIONS.map((t) => t.function.
 const CALENDAR_TIMEZONE_LABEL = "GMT+8";
 const CALENDAR_OFFSET_MINUTES = 8 * 60;
 
-// Today's date injected once so the model always has accurate temporal context.
-const TODAY = getCurrentDateInCalendarOffset();
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-const SYSTEM_PROMPT = fs.readFileSync(path.join(__dirname, "prompt.md"), "utf8")
-  .replace("{{TODAY}}", TODAY)
-  .replace(/\{\{CALENDAR_TIMEZONE_LABEL\}\}/g, CALENDAR_TIMEZONE_LABEL);
+const TEMPLATE_PROMPT = fs.readFileSync(path.join(__dirname, "prompt.md"), "utf8");
 
 
 /**
@@ -89,14 +83,19 @@ export async function runAgent(userMessage, credentials, sessionId) {
     return guidedTaskResponse;
   }
 
+  const systemPrompt = TEMPLATE_PROMPT
+    .replace("{{TODAY}}", getCurrentDateInCalendarOffset())
+    .replace("{{CURRENT_TIME}}", getCurrentTimeInCalendarOffset())
+    .replace(/\{\{CALENDAR_TIMEZONE_LABEL\}\}/g, CALENDAR_TIMEZONE_LABEL);
+
   const messages = [
-    { role: "system", content: SYSTEM_PROMPT },
-    ...sessionHistory,
-    { role: "user",   content: userMessage },
+    { role: "system", content: systemPrompt },
+    ...sessionHistory, // previous interactions
+    { role: "user", content: userMessage },
   ];
 
   const toolsUsed = [];
-  const errors    = [];
+  const errors = [];
 
   for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
     // ── Call Ollama ──────────────────────────────────────────────────────────
@@ -127,7 +126,7 @@ export async function runAgent(userMessage, credentials, sessionId) {
     // No tool calls → either final prose, or an invalid pseudo tool-call plan.
     if (!toolCalls || toolCalls.length === 0) {
       const assistantResponseRaw = assistantMessage.content?.trim() ?? "(No response generated)";
-      const assistantResponse = ensureFriendlyEmoji(assistantResponseRaw);
+      const assistantResponse = assistantResponseRaw;
 
       const plannedCall = extractPlannedToolCall(assistantResponse);
       if (plannedCall && VALID_LLM_TOOL_NAMES.has(plannedCall.name)) {
@@ -188,7 +187,7 @@ export async function runAgent(userMessage, credentials, sessionId) {
 
       return {
         session_id: resolvedSessionId,
-        response:   assistantResponse,
+        response: assistantResponse,
         tools_used: toolsUsed,
         errors,
         suggestions: [],
@@ -260,7 +259,7 @@ export async function runAgent(userMessage, credentials, sessionId) {
     // ── Feed results back as tool-role messages ──────────────────────────────
     for (const { result } of results) {
       messages.push({
-        role:    "tool",
+        role: "tool",
         content: JSON.stringify(
           result.success
             ? result.data
@@ -285,7 +284,7 @@ export async function runAgent(userMessage, credentials, sessionId) {
 
   return {
     session_id: resolvedSessionId,
-    response: ensureFriendlyEmoji(fallbackResponse),
+    response: fallbackResponse,
     tools_used: toolsUsed,
     errors,
     suggestions: [],
@@ -407,9 +406,9 @@ async function resolveToolArgs(name, args, credentials, toolsUsed, errors, userM
   if (name === "delete_tasks") {
     const taskIds = Array.isArray(safeArgs.task_ids)
       ? safeArgs.task_ids
-          .filter((id) => typeof id === "string")
-          .map((id) => id.trim())
-          .filter(Boolean)
+        .filter((id) => typeof id === "string")
+        .map((id) => id.trim())
+        .filter(Boolean)
       : [];
     return taskIds.length > 0 ? { task_ids: taskIds } : null;
   }
@@ -479,6 +478,10 @@ function getCurrentDateInCalendarOffset() {
   return shiftDateToCalendarOffset(new Date()).toISOString().slice(0, 10);
 }
 
+function getCurrentTimeInCalendarOffset() {
+  return shiftDateToCalendarOffset(new Date()).toISOString().slice(11, 16);
+}
+
 function shiftDateToCalendarOffset(date) {
   return new Date(date.getTime() + CALENDAR_OFFSET_MINUTES * 60 * 1000);
 }
@@ -492,9 +495,10 @@ function addDaysToIsoDate(date, days) {
 function normalizeDate(value) {
   if (typeof value !== "string") return null;
   const v = value.trim().toLowerCase();
-  if (v === "today") return TODAY;
-  if (v === "tomorrow") return addDaysToIsoDate(TODAY, 1);
-  if (v === "next week") return addDaysToIsoDate(TODAY, 7);
+  const today = getCurrentDateInCalendarOffset();
+  if (v === "today") return today;
+  if (v === "tomorrow") return addDaysToIsoDate(today, 1);
+  if (v === "next week") return addDaysToIsoDate(today, 7);
   return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
 }
 
@@ -732,7 +736,7 @@ async function handleGuidedTaskCreation({
       "Task created successfully:",
       formatTaskPreview(createdTask),
       "",
-      `Here are your pending tasks ${toEmojiNumber(pendingTasks.length)}:`,
+      `Here are your pending tasks (${pendingTasks.length}):`,
       ...formatPendingTaskList(pendingTasks),
     ].join("\n");
 
@@ -829,7 +833,7 @@ async function handleGuidedTaskCreation({
         "Thanks.\n\nWhat is the due date? Use YYYY-MM-DD, or say today/tomorrow/next week, or reply skip.",
       toolsUsed: [],
       errors: [],
-        suggestions: ["Today", "Next Week", "Skip", "Previous Input"],
+      suggestions: ["Today", "Next Week", "Skip", "Previous Input"],
     });
   }
 
@@ -1077,7 +1081,7 @@ async function handleGuidedTaskDeletion({
     setTaskDeleteDraft(sessionId, nextDraft);
 
     const response = [
-      `Please confirm deletion for ${toEmojiNumber(selectedTasks.length)} task(s):`,
+      `Please confirm deletion for ${selectedTasks.length} task(s):`,
       ...selectedTasks.map((task) => formatTaskChoice(task)),
       "",
       "Reply Approved to delete, Decline to cancel, or Previous Input to reselect tasks.",
@@ -1185,9 +1189,9 @@ async function handleGuidedTaskDeletion({
     const deletedCount = Number(deleted.data?.deleted_count ?? selectedIds.length);
     const pendingTasks = Array.isArray(pending.data?.tasks) ? pending.data.tasks : [];
     const response = [
-      `Done. Deleted ${toEmojiNumber(deletedCount)} task(s).`,
+      `Done. Deleted ${deletedCount} task(s).`,
       "",
-      `Here are your pending tasks ${toEmojiNumber(pendingTasks.length)}:`,
+      `Here are your pending tasks (${pendingTasks.length}):`,
       ...formatPendingTaskList(pendingTasks),
     ].join("\n");
 
@@ -1207,37 +1211,22 @@ async function handleGuidedTaskDeletion({
 }
 
 function buildGuidedReply({ sessionId, sessionHistory, userMessage, response, toolsUsed, errors, suggestions = [] }) {
-  const friendlyResponse = ensureFriendlyEmoji(response);
-
   saveSessionMessages(sessionId, [
     ...sessionHistory,
     { role: "user", content: userMessage },
-    { role: "assistant", content: friendlyResponse },
+    { role: "assistant", content: response },
   ]);
 
   return {
     session_id: sessionId,
-    response: friendlyResponse,
+    response,
     tools_used: toolsUsed,
     errors,
     suggestions,
   };
 }
 
-function ensureFriendlyEmoji(text) {
-  const content = typeof text === "string" ? text.trim() : "";
-  if (!content) return "🙂";
 
-  // Keep existing emoji-rich responses unchanged.
-  if (containsEmoji(content)) return content;
-
-  return `${content} 🙂`;
-}
-
-function containsEmoji(text) {
-  // Unicode property escapes are supported in modern Node runtimes.
-  return /\p{Extended_Pictographic}/u.test(text);
-}
 
 function cloneTaskDraft(draft) {
   return {
@@ -1361,26 +1350,7 @@ function formatTaskPreview(task) {
   return lines.join("\n");
 }
 
-function toEmojiNumber(value) {
-  const safe = Number.isFinite(Number(value)) ? Math.max(0, Math.trunc(Number(value))) : 0;
-  const digits = String(safe);
-  const map = {
-    "0": "0️⃣",
-    "1": "1️⃣",
-    "2": "2️⃣",
-    "3": "3️⃣",
-    "4": "4️⃣",
-    "5": "5️⃣",
-    "6": "6️⃣",
-    "7": "7️⃣",
-    "8": "8️⃣",
-    "9": "9️⃣",
-  };
-  return digits
-    .split("")
-    .map((d) => map[d] ?? d)
-    .join("");
-}
+
 
 function formatTaskChoice(task) {
   const due = task?.due_date ?? "no due date";
