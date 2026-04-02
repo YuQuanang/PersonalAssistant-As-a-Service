@@ -86,14 +86,21 @@ export async function runAgent(userMessage, credentials, sessionId) {
     }
 
     const assistantMessage = ollamaData.message;
+    const toolCalls = assistantMessage.tool_calls;
+
+    // Log LLM response
+    console.log(assistantMessage)
+    if (toolCalls && toolCalls.length > 0) {
+      const names = toolCalls.map((tc) => tc.function.name).join(", ");
+      console.log(`[llm] iteration=${iteration} → tool_calls: [${names}]`);
+    } else {
+      console.log(`[llm] iteration=${iteration} → final text response`);
+    }
 
     // Append the assistant turn (may contain tool_calls) to history so Ollama
     // has full context on the next iteration.
     messages.push(assistantMessage);
 
-    const toolCalls = assistantMessage.tool_calls;
-
-    // No tool calls → either final prose, or an invalid pseudo tool-call plan.
     if (!toolCalls || toolCalls.length === 0) {
       const assistantResponseRaw = assistantMessage.content?.trim() ?? "(No response generated)";
       const assistantResponse = assistantResponseRaw;
@@ -237,9 +244,7 @@ export async function runAgent(userMessage, credentials, sessionId) {
         ),
       });
     }
-
-    // Loop — Ollama will process tool results and either call more tools or
-    // produce a final answer.
+    // END OF MAX_ITERATION LOOP
   }
 
   // Safety fallback if MAX_TOOL_ITERATIONS is somehow exhausted.
@@ -322,7 +327,7 @@ async function resolveToolArgs(name, args, credentials, toolsUsed, errors, userM
     const start_date =
       typeof safeArgs.start_date === "string" && safeArgs.start_date.trim() !== ""
         ? normalizeDate(safeArgs.start_date)
-        : TODAY;
+        : getCurrentDateInCalendarOffset();
     const end_date =
       typeof safeArgs.end_date === "string" && safeArgs.end_date.trim() !== ""
         ? normalizeDate(safeArgs.end_date)
@@ -525,24 +530,6 @@ function parseRequestedEmailIndex(text) {
   }
 
   return null;
-}
-
-function resolveServiceName(toolName) {
-  if (
-    toolName === "list_calendar_events" ||
-    toolName === "create_calendar_event" ||
-    toolName === "get_calendar_event" ||
-    toolName === "delete_calendar_event"
-  ) {
-    return "calendar-service";
-  }
-  if (toolName === "get_tasks" || toolName === "create_task" || toolName === "delete_tasks") {
-    return "task-service";
-  }
-  if (toolName === "get_emails" || toolName === "read_email") {
-    return "email-service";
-  }
-  return "unknown-service";
 }
 
 function getSessionMessages(sessionId) {
