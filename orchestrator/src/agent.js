@@ -73,8 +73,18 @@ export async function runAgent(userMessage, credentials, sessionId) {
     try {
       const { data } = await axios.post(
         OLLAMA_CHAT_URL,
-        { model: OLLAMA.model, messages, tools: LLM_TOOL_DEFINITIONS, stream: false },
-        { timeout: OLLAMA.timeout }
+        {
+          model: OLLAMA.model,
+          messages,
+          tools: LLM_TOOL_DEFINITIONS,
+          stream: false,
+          options: {
+            temperature: 0.1
+          }
+        },
+        {
+          timeout: OLLAMA.timeout
+        }
       );
       ollamaData = data;
     } catch (err) {
@@ -89,7 +99,7 @@ export async function runAgent(userMessage, credentials, sessionId) {
     const toolCalls = assistantMessage.tool_calls;
 
     // Log LLM response
-    console.log(assistantMessage)
+    console.log("[llm] raw response:", JSON.stringify(assistantMessage, null, 2));
     if (toolCalls && toolCalls.length > 0) {
       const names = toolCalls.map((tc) => tc.function.name).join(", ");
       console.log(`[llm] iteration=${iteration} → tool_calls: [${names}]`);
@@ -324,14 +334,17 @@ async function resolveToolArgs(name, args, credentials, toolsUsed, errors, userM
   const safeArgs = args && typeof args === "object" ? args : {};
 
   if (name === "list_calendar_events") {
-    const start_date =
-      typeof safeArgs.start_date === "string" && safeArgs.start_date.trim() !== ""
-        ? normalizeDate(safeArgs.start_date)
-        : getCurrentDateInCalendarOffset();
-    const end_date =
-      typeof safeArgs.end_date === "string" && safeArgs.end_date.trim() !== ""
-        ? normalizeDate(safeArgs.end_date)
-        : "";
+    const rawStart = typeof safeArgs.start_date === "string" ? safeArgs.start_date.trim().toLowerCase() : "";
+    const rawEnd   = typeof safeArgs.end_date   === "string" ? safeArgs.end_date.trim().toLowerCase()   : "";
+
+    // Special-case: "next week" → full Mon–Sun range, regardless of what the LLM set for end_date.
+    if (rawStart === "next week" || rawEnd === "next week") {
+      const { start, end } = getNextWeekRange();
+      return { start_date: start, end_date: end };
+    }
+
+    const start_date = rawStart !== "" ? normalizeDate(rawStart) : getCurrentDateInCalendarOffset();
+    const end_date   = rawEnd   !== "" ? normalizeDate(rawEnd)   : "";
     return start_date ? { start_date, end_date } : null;
   }
 
@@ -471,8 +484,22 @@ function normalizeDate(value) {
   const today = getCurrentDateInCalendarOffset();
   if (v === "today") return today;
   if (v === "tomorrow") return addDaysToIsoDate(today, 1);
-  if (v === "next week") return addDaysToIsoDate(today, 7);
+  if (v === "next week") return getNextWeekRange().start;
   return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+}
+
+/**
+ * Returns the ISO dates for the Monday–Sunday of next calendar week (GMT+8).
+ */
+function getNextWeekRange() {
+  const today = shiftDateToCalendarOffset(new Date());
+  // 0=Sun,1=Mon,...,6=Sat — shift so Monday=0
+  const dayOfWeek = (today.getUTCDay() + 6) % 7; // Mon=0 … Sun=6
+  const daysUntilNextMonday = 7 - dayOfWeek;      // always 1-7
+  const todayIso = today.toISOString().slice(0, 10);
+  const start = addDaysToIsoDate(todayIso, daysUntilNextMonday);
+  const end   = addDaysToIsoDate(start, 6); // next Sunday
+  return { start, end };
 }
 
 function normalizeTime(value) {

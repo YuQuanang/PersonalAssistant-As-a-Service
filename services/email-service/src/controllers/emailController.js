@@ -138,7 +138,6 @@ export async function handleGetEmail(req, res) {
     if (!emailBodyText) {
         emailBodyText = normalizeText(msgRes.data.snippet || "Could not extract plain text body.");
     }
-
     // Keep payload manageable while preserving enough context for rich summaries.
     const bodyForSummary = emailBodyText.slice(0, 12000);
 
@@ -150,8 +149,6 @@ export async function handleGetEmail(req, res) {
       date_header: dateHeader,
       snippet: msgRes.data.snippet || "",
       body_char_count: emailBodyText.length,
-      // Pass the *entire* text body back to the Orchestrator for LLM summarization!
-      summary: bodyForSummary,
       body_text: bodyForSummary,
     });
   } catch (err) {
