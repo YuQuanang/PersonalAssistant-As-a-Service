@@ -2,7 +2,7 @@ import express from "express";
 import cookieParser from "cookie-parser";
 import { exec } from "node:child_process";
 import { PORT } from "./config.js";
-import { runAgent, endSession } from "./agent.js";
+import { runAgent, endSession } from "./graph.js";
 import {
   getAuthUrl,
   exchangeCodeForTokens,
@@ -180,7 +180,7 @@ app.get("/api/auth/google/callback", async (req, res) => {
   try {
     const tokens = await exchangeCodeForTokens(code);
     const cookieOptions = buildAuthCookieOptions(req);
-    
+
     // Store the tokens securely in a server-only cookie
     res.cookie("google_auth_tokens", JSON.stringify(tokens), cookieOptions);
 
