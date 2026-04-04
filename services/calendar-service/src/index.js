@@ -9,6 +9,9 @@ app.use(express.json());
 // Request logger
 app.use((req, res, next) => {
   console.log(`[calendar-service] ${req.method} ${req.url}`);
+  if (req.method !== "GET" && req.body && Object.keys(req.body).length > 0) {
+    console.log(`[calendar-service] body:`, JSON.stringify(req.body));
+  }
   next();
 });
 

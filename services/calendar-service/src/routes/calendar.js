@@ -12,7 +12,7 @@ router.post("/events", calendarController.handleCreateEvent);
 // GET /api/events/:eventId
 router.get("/events/:eventId", calendarController.handleGetEvent);
 
-// DELETE /api/events/:eventId
-router.delete("/events/:eventId", calendarController.handleDeleteEvent);
+// DELETE /api/events
+router.delete("/events", calendarController.handleDeleteEvent);
 
 export default router;

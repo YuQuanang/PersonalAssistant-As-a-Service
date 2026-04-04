@@ -26,12 +26,8 @@ export async function handleListEmails(req, res) {
   try {
     const gmail = getGmailClient(req.headers.authorization);
 
-    // Fast count snapshots with hard cap at 100.
-    const [allCount, unreadCount, readCount] = await Promise.all([
-      getCappedMessageCount(gmail, "all", 100),
-      getCappedMessageCount(gmail, "unread", 100),
-      getCappedMessageCount(gmail, "read", 100),
-    ]);
+    // Fetch count only for the active filter.
+    const filteredCount = await getCappedMessageCount(gmail, filter, 100);
 
     // List only the latest 10 messages for preview.
     const listParams = { userId: "me", maxResults: 10 };
@@ -43,12 +39,6 @@ export async function handleListEmails(req, res) {
 
     const listRes = await listMessages(gmail, listParams);
     const messages = listRes.data.messages || [];
-    const totalCount =
-      filter === "unread"
-        ? unreadCount.display
-        : filter === "read"
-        ? readCount.display
-        : allCount.display;
 
     // Fetch details for each message
     const emailPromises = messages.map(async (msg) => {
@@ -72,10 +62,7 @@ export async function handleListEmails(req, res) {
       filter,
       emails,
       shown_count: emails.length,
-      total_count: totalCount,
-      total_unread: unreadCount.display,
-      total_read: readCount.display,
-      total_all: allCount.display,
+      total_count: filteredCount.display,
       count_cap: 100,
     });
   } catch (err) {

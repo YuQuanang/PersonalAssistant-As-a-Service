@@ -30,7 +30,7 @@ export async function handleListEvents(req, res) {
     typeof req.query.startDate === "string" && req.query.startDate.trim() !== ""
       ? req.query.startDate.trim()
       : getCurrentCalendarDate();
-  
+
   const endDate = typeof req.query.endDate === "string" ? req.query.endDate.trim() : "";
 
   if (!isValidDate(requestedDate)) {
@@ -169,27 +169,38 @@ export async function handleGetEvent(req, res) {
 }
 
 export async function handleDeleteEvent(req, res) {
-  const { eventId } = req.params;
+  const { eventIds } = req.body;
 
-  if (!isValidEventId(eventId)) {
+  if (!Array.isArray(eventIds) || eventIds.length === 0) {
     return res.status(400).json({
-      error: "Invalid or missing 'eventId' path parameter.",
+      error: "Invalid request. 'eventIds' must be a non-empty array.",
     });
   }
 
   try {
     const calendar = getCalendarClient(req.headers.authorization);
 
-    await deleteEvent(calendar, { eventId });
+    const results = await Promise.allSettled(
+      eventIds.map((id) => deleteEvent(calendar, { eventId: id }))
+    );
+
+    const successfulIds = results
+      .filter((r) => r.status === "fulfilled")
+      .map((_, index) => eventIds[index]);
+
+    const failedIds = results
+      .filter((r) => r.status === "rejected")
+      .map((r, index) => ({ id: eventIds[index], reason: r.reason.message }));
 
     return res.status(200).json({
-      id: eventId,
-      deleted: true,
-      status: "cancelled",
-      time_zone: CALENDAR_TIMEZONE_LABEL,
-    });
+      deletedCount: successfulIds.length,
+      failedCount: failedIds.length,
+      deletedIds: successfulIds,
+      failures: failedIds,
+      status: failedIds.length === 0 ? "all_cleared" : "partial_success",
+    })
   } catch (err) {
-    console.error("[calendar-service] Delete event error:", err.message);
+    console.error("[calendar-service] Bulk delete error:", err.message);
     return sendCalendarError(res, err);
   }
 }

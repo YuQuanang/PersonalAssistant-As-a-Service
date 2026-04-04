@@ -1,6 +1,5 @@
 import { fetchGoogleTasks, createGoogleTask, deleteGoogleTasks } from "../services/googleTaskService.js";
 
-const VALID_PRIORITIES = new Set(["low", "medium", "high"]);
 const VALID_STATUSES = new Set(["pending", "completed", "all"]);
 
 function sendError(res, err) {
@@ -35,14 +34,10 @@ export async function handleGetTasks(req, res) {
 }
 
 export async function handleCreateTask(req, res) {
-  const { title, description = "", due_date, priority = "medium" } = req.body ?? {};
+  const { title, description = "", due_date } = req.body ?? {};
 
   if (!title) {
     return res.status(400).json({ error: "Missing required field: title." });
-  }
-
-  if (priority && !VALID_PRIORITIES.has(priority)) {
-    return res.status(400).json({ error: `Invalid 'priority' value. Allowed: low, medium, high.` });
   }
 
   if (due_date && !/^\d{4}-\d{2}-\d{2}$/.test(due_date)) {
@@ -50,7 +45,7 @@ export async function handleCreateTask(req, res) {
   }
 
   try {
-    const body = await createGoogleTask(req.headers.authorization, { title, description, due_date, priority });
+    const body = await createGoogleTask(req.headers.authorization, { title, description, due_date });
     return res.status(201).json(body);
   } catch (err) {
     return sendError(res, err);

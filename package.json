@@ -4,11 +4,13 @@
   "private": true,
   "scripts": {
     "install:all": "npm install --prefix client && npm install --prefix orchestrator && npm install --prefix services/calendar-service && npm install --prefix services/task-service && npm install --prefix services/email-service",
+    "start:client": "wait-on http://localhost:3000/health && npm --prefix client run dev:ui",
     "start:backend": "concurrently --kill-others --prefix-colors \"cyan,green,yellow,magenta\" --names \"calendar,task,email,orchestrator\" \"node services/calendar-service/src/index.js\" \"node services/task-service/src/index.js\" \"node services/email-service/src/index.js\" \"npm --prefix orchestrator start\"",
-    "start": "concurrently --kill-others --prefix-colors \"cyan,green,yellow,magenta,blue\" --names \"calendar,task,email,orchestrator,client\" \"node services/calendar-service/src/index.js\" \"node services/task-service/src/index.js\" \"node services/email-service/src/index.js\" \"npm --prefix orchestrator start\" \"npm --prefix client run dev:ui\"",
+    "start": "concurrently --kill-others --prefix-colors \"cyan,green,yellow,magenta,blue\" --names \"calendar,task,email,orchestrator,client\" \"node services/calendar-service/src/index.js\" \"node services/task-service/src/index.js\" \"node services/email-service/src/index.js\" \"npm --prefix orchestrator start\" \"npm run start:client\"",
     "build:client": "npm --prefix client run build"
   },
   "devDependencies": {
-    "concurrently": "^8.2.0"
+    "concurrently": "^8.2.0",
+    "wait-on": "^9.0.4"
   }
 }

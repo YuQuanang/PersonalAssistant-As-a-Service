@@ -1,8 +1,7 @@
 import { google } from "googleapis";
 
 const GOOGLE_TASKLIST_ID = process.env.GOOGLE_TASKLIST_ID ?? "@default";
-const PRIORITY_PREFIX = "PAAS_PRIORITY:";
-const VALID_PRIORITIES = new Set(["low", "medium", "high"]);
+
 
 function getTasksClient(authHeader) {
   if (!authHeader?.startsWith("Bearer ")) {
@@ -18,38 +17,13 @@ function getTasksClient(authHeader) {
   return google.tasks({ version: "v1", auth: oauth2Client });
 }
 
-function splitPriorityAndDescription(notes = "") {
-  if (!notes || typeof notes !== "string") {
-    return { priority: "medium", description: "" };
-  }
-
-  const firstLine = notes.split("\n", 1)[0].trim();
-  if (!firstLine.startsWith(PRIORITY_PREFIX)) {
-    return { priority: "medium", description: notes.trim() };
-  }
-
-  const rawPriority = firstLine.slice(PRIORITY_PREFIX.length).trim().toLowerCase();
-  const priority = VALID_PRIORITIES.has(rawPriority) ? rawPriority : "medium";
-  const description = notes.slice(firstLine.length).trim();
-  return { priority, description };
-}
-
-function buildGoogleNotes({ description = "", priority = "medium" }) {
-  const cleanDescription = String(description).trim();
-  return cleanDescription
-    ? `${PRIORITY_PREFIX}${priority}\n\n${cleanDescription}`
-    : `${PRIORITY_PREFIX}${priority}`;
-}
-
 export function mapGoogleTaskToPaaS(task) {
-  const { priority, description } = splitPriorityAndDescription(task.notes ?? "");
   const dueDate = typeof task.due === "string" ? task.due.slice(0, 10) : null;
   return {
     id: task.id,
     title: task.title ?? "Untitled",
-    description,
+    description: (task.notes ?? "").trim(),
     due_date: dueDate,
-    priority,
     status: task.status === "completed" ? "completed" : "pending",
     created_at: task.updated ?? null,
   };
@@ -75,13 +49,13 @@ export async function fetchGoogleTasks(authHeader, statusFilter) {
   return { tasks: filtered, total: filtered.length };
 }
 
-export async function createGoogleTask(authHeader, { title, description, due_date, priority }) {
+export async function createGoogleTask(authHeader, { title, description, due_date }) {
   const tasksClient = getTasksClient(authHeader);
   const { data } = await tasksClient.tasks.insert({
     tasklist: GOOGLE_TASKLIST_ID,
     requestBody: {
       title,
-      notes: buildGoogleNotes({ description, priority }),
+      notes: description ? String(description).trim() : undefined,
       due: due_date ? `${due_date}T00:00:00.000Z` : undefined,
     },
   });

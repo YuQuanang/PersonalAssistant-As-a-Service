@@ -4,7 +4,7 @@ import { z } from "zod";
 import axios from "axios";
 import { getValidAccessToken } from "./auth";
 import { SERVICES, SERVICE_TIMEOUT_MS } from "./config.js";
-import { getCurrentDateInCalendarOffset, addDaysToIsoDate } from "./utils.js";
+import { getCurrentDateInCalendarOffset, addDaysToIsoDate, stripMarkdown } from "./utils.js";
 
 
 const http = axios.create({ timeout: SERVICE_TIMEOUT_MS });
@@ -15,6 +15,7 @@ async function getAuthHeaders(credentials: unknown) {
     return { headers: { Authorization: `Bearer ${token}` } };
 }
 
+// Helper Functions
 function getNextWeekRange(): { start: string; end: string } {
     const todayIso = getCurrentDateInCalendarOffset();
     // Shift so Mon=0 … Sun=6
@@ -34,6 +35,7 @@ function normalizeDate(value: string | null | undefined): string | null {
     return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
 }
 
+// Calendar
 export const listCalendarEventsTool = tool(
     async ({ start_date, end_date }, config: RunnableConfig) => {
         const credentials = config.configurable?.credentials;
@@ -70,60 +72,54 @@ export const createCalendarEventTool = tool(
         const authConfig = await getAuthHeaders(credentials);
         const { data } = await http.post(
             `${SERVICES.calendar}/api/events`,
-            { title, date, start, end, description, location },
+            {
+                title: stripMarkdown(title),
+                date: stripMarkdown(date),
+                start: stripMarkdown(start),
+                end: stripMarkdown(end),
+                description: stripMarkdown(description),
+                location: stripMarkdown(location),
+            },
             authConfig
         );
         return JSON.stringify(data);
     },
     {
         name: "create_calendar_event",
-        description: "Create a new calendar event.",
+        description: "Create a new calendar event. start must be earlier than end.",
         schema: z.object({
             title: z.string().describe("Event title."),
             date: z.string().describe("Event date in YYYY-MM-DD format."),
-            start: z.string().describe("Start time in HH:MM (24-hour)."),
-            end: z.string().describe("End time in HH:MM (24-hour)."),
+            start: z.string().describe("Start time in HH:MM (24-hour). Must be earlier than end."),
+            end: z.string().describe("End time in HH:MM (24-hour). Must be later than start."),
             description: z.string().optional().describe("Optional event details."),
             location: z.string().optional().describe("Optional location."),
         }),
     }
 );
-export const getCalendarEventTool = tool(
-    async ({ event_id }, config: RunnableConfig) => {
-        const credentials = config.configurable?.credentials;
-        const authConfig = await getAuthHeaders(credentials);
-        const { data } = await http.get(
-            `${SERVICES.calendar}/api/events/${encodeURIComponent(event_id)}`,
-            authConfig
-        );
-        return JSON.stringify(data);
-    },
-    {
-        name: "get_calendar_event",
-        description: "Get a calendar event by its event ID.",
-        schema: z.object({
-            event_id: z.string().describe("The calendar event ID."),
-        }),
-    }
-);
+
 export const deleteCalendarEventTool = tool(
-    async ({ event_id }, config: RunnableConfig) => {
+    async ({ event_ids }, config: RunnableConfig) => {
         const credentials = config.configurable?.credentials;
         const authConfig = await getAuthHeaders(credentials);
         const { data } = await http.delete(
-            `${SERVICES.calendar}/api/events/${encodeURIComponent(event_id)}`,
-            authConfig
+            `${SERVICES.calendar}/api/events`, {
+            ...authConfig,
+            data: { event_ids }
+        }
         );
         return JSON.stringify(data);
     },
     {
         name: "delete_calendar_event",
-        description: "Delete a calendar event by its event ID.",
+        description: "Delete one or more calendar events by their event IDs.",
         schema: z.object({
-            event_id: z.string().describe("The calendar event ID to delete."),
+            event_ids: z.array(z.string()).describe("List of calendar event IDs to delete."),
         }),
     }
 );
+
+// Tasks
 export const getTasksTool = tool(
     async ({ status = "pending" }, config: RunnableConfig) => {
         const credentials = config.configurable?.credentials;
@@ -143,13 +139,14 @@ export const getTasksTool = tool(
         }),
     }
 );
+
 export const createTaskTool = tool(
-    async ({ title, description = "", due_date, priority = "medium" }, config: RunnableConfig) => {
+    async ({ title, description = "", due_date }, config: RunnableConfig) => {
         const credentials = config.configurable?.credentials;
         const authConfig = await getAuthHeaders(credentials);
         const { data } = await http.post(
             `${SERVICES.task}/api/tasks`,
-            { title, description, due_date, priority },
+            { title: stripMarkdown(title), description: stripMarkdown(description), due_date },
             authConfig
         );
         return JSON.stringify(data);
@@ -161,10 +158,10 @@ export const createTaskTool = tool(
             title: z.string().describe("Task title."),
             description: z.string().optional().describe("Optional context."),
             due_date: z.string().optional().describe("Due date in YYYY-MM-DD format."),
-            priority: z.enum(["low", "medium", "high"]).optional().describe("Defaults to medium."),
         }),
     }
 );
+
 export const deleteTasksTool = tool(
     async ({ task_ids }, config: RunnableConfig) => {
         const credentials = config.configurable?.credentials;
@@ -183,6 +180,8 @@ export const deleteTasksTool = tool(
         }),
     }
 );
+
+// Emails
 export const getEmailsTool = tool(
     async ({ filter = "unread" }, config: RunnableConfig) => {
         const credentials = config.configurable?.credentials;
@@ -196,13 +195,14 @@ export const getEmailsTool = tool(
     },
     {
         name: "get_emails",
-        description: 'Fetch emails. Use "unread", "read", or "all".',
+        description: 'Fetch emails. Default to "unread" unless the user explicitly asks for read or all emails.',
         schema: z.object({
             filter: z.enum(["unread", "read", "all"]).optional()
-                .describe('Filter by read status. Defaults to "unread".'),
+                .describe('Filter by read status. Use "unread" for any generic email query (e.g. "do I have emails", "check my emails"). Only use "read" or "all" if the user explicitly requests it.'),
         }),
     }
 );
+
 export const readEmailTool = tool(
     async ({ email_id }, config: RunnableConfig) => {
         const credentials = config.configurable?.credentials;
@@ -221,11 +221,11 @@ export const readEmailTool = tool(
         }),
     }
 );
-// ── Exported array for graph.ts ───────────────────────────────────────────────
+
+// Exported Tools
 export const TOOLS = [
     listCalendarEventsTool,
     createCalendarEventTool,
-    getCalendarEventTool,
     deleteCalendarEventTool,
     getTasksTool,
     createTaskTool,
