@@ -16,6 +16,7 @@ import {
   insertEvent,
   getEvent,
   deleteEvent,
+  updateEvent,
 } from "../services/googleCalendarService.js";
 
 const CALENDAR_TIMEZONE = process.env.CALENDAR_TIMEZONE ?? "Asia/Singapore";
@@ -201,6 +202,79 @@ export async function handleDeleteEvent(req, res) {
     })
   } catch (err) {
     console.error("[calendar-service] Bulk delete error:", err.message);
+    return sendCalendarError(res, err);
+  }
+}
+
+export async function handlePutEvent(req, res) {
+  const { eventId } = req.params;
+  const { title, date, start, end, description = "", location = "" } = req.body ?? {};
+
+  if (!isValidEventId(eventId)) {
+    return res.status(400).json({
+      error: "Invalid or missing 'eventId' path parameter.",
+    });
+  }
+
+  if (!isValidDate(date)) {
+    return res.status(400).json({
+      error: "Invalid 'date' format. Expected: YYYY-MM-DD.",
+    });
+  }
+
+  if (!isValidTime(start) || !isValidTime(end)) {
+    return res.status(400).json({
+      error: "Invalid 'start' or 'end' format. Expected: HH:MM (24-hour).",
+    });
+  }
+
+  if (start >= end) {
+    return res.status(400).json({
+      error: "Invalid time range. 'end' must be later than 'start'.",
+    });
+  }
+
+  try {
+    const calendar = getCalendarClient(req.headers.authorization);
+    const timeMin = buildOffsetDateTime(date, start);
+    const timeMax = buildOffsetDateTime(date, end);
+
+    const isAvailable = await checkSlotAvailability(calendar, {
+      timeMin,
+      timeMax,
+      timeZone: CALENDAR_TIMEZONE,
+      excludeEventId: eventId,
+    });
+
+    if (!isAvailable) {
+      return res.status(409).json({
+        error: `The requested time slot (${start}-${end}) is already booked.`,
+      });
+    }
+
+    const requestBody = {
+      summary: title,
+      description: typeof description === "string" ? description : "",
+      ...(typeof location === "string" && location.trim() !== "" ? { location: location.trim() } : {}),
+      start: buildEventDateTime(date, start),
+      end: buildEventDateTime(date, end),
+    };
+
+    const updatedData = await updateEvent(calendar, eventId, requestBody);
+
+    return res.status(200).json(
+      mapEventResponse(updatedData, {
+        title,
+        description,
+        location,
+        date,
+        start,
+        end,
+        status: "confirmed",
+      })
+    );
+  } catch (err) {
+    console.error("[calendar-service] Update event error:", err.message);
     return sendCalendarError(res, err);
   }
 }

@@ -30,7 +30,7 @@ export async function listEvents(calendar, { timeMin, timeMax, timeZone, maxResu
   return response.data;
 }
 
-export async function checkSlotAvailability(calendar, { timeMin, timeMax, timeZone }) {
+export async function checkSlotAvailability(calendar, { timeMin, timeMax, timeZone, excludeEventId = null }) {
   const existing = await calendar.events.list({
     calendarId: GOOGLE_CALENDAR_ID,
     timeMin,
@@ -38,10 +38,12 @@ export async function checkSlotAvailability(calendar, { timeMin, timeMax, timeZo
     timeZone,
     singleEvents: true,
     showDeleted: false,
-    maxResults: 1,
+    maxResults: 10,
     orderBy: "startTime",
   });
-  return (existing.data.items?.length ?? 0) === 0;
+
+  const items = (existing.data.items ?? []).filter(item => item.id !== excludeEventId);
+  return items.length === 0;
 }
 
 export async function insertEvent(calendar, requestBody) {
@@ -67,4 +69,13 @@ export async function deleteEvent(calendar, { eventId }) {
     eventId,
   });
   return true;
+}
+
+export async function updateEvent(calendar, eventId, requestBody) {
+  const response = await calendar.events.update({
+    calendarId: GOOGLE_CALENDAR_ID,
+    eventId,
+    requestBody,
+  });
+  return response.data;
 }

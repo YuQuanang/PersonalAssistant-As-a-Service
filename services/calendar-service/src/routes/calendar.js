@@ -10,7 +10,10 @@ router.get("/events", calendarController.handleListEvents);
 router.post("/events", calendarController.handleCreateEvent);
 
 // GET /api/events/:eventId
-router.get("/events/:eventId", calendarController.handleGetEvent);
+// router.get("/events/:eventId", calendarController.handleGetEvent);
+
+// PUT /api/events/:eventId
+router.put("/events/:eventId", calendarController.handlePutEvent);
 
 // DELETE /api/events
 router.delete("/events", calendarController.handleDeleteEvent);
