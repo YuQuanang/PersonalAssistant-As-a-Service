@@ -231,6 +231,22 @@ export const deleteTasksTool = tool(
     }
 );
 
+export const completeTasksTool = tool(
+    async ({ task_ids }, config: RunnableConfig) => {
+        const credentials = config.configurable?.credentials;
+        const authConfig = await getAuthHeaders(credentials);
+        const { data } = await http.patch(`${SERVICES.task}/api/tasks/complete`, { task_ids }, authConfig);
+        return JSON.stringify(data);
+    },
+    {
+        name: "complete_tasks",
+        description: "Mark one or more tasks as completed by their task IDs.",
+        schema: z.object({
+            task_ids: z.array(z.string()).describe("List of task IDs to mark as completed."),
+        }),
+    }
+);
+
 // Emails
 export const getEmailsTool = tool(
     async ({ filter = "unread" }, config: RunnableConfig) => {
@@ -281,6 +297,7 @@ export const TOOLS = [
     getTasksTool,
     createTaskTool,
     deleteTasksTool,
+    completeTasksTool,
     getEmailsTool,
     readEmailTool,
 ];

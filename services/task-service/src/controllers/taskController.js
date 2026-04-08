@@ -1,4 +1,4 @@
-import { fetchGoogleTasks, createGoogleTask, deleteGoogleTasks } from "../services/googleTaskService.js";
+import { fetchGoogleTasks, createGoogleTask, deleteGoogleTasks, completeGoogleTasks } from "../services/googleTaskService.js";
 
 const VALID_STATUSES = new Set(["pending", "completed", "all"]);
 
@@ -80,6 +80,20 @@ export async function handleDeleteTasks(req, res) {
 
   try {
     const body = await deleteGoogleTasks(req.headers.authorization, parsed.taskIds);
+    return res.status(200).json(body);
+  } catch (err) {
+    return sendError(res, err);
+  }
+}
+
+export async function handleCompleteTasks(req, res) {
+  const parsed = parseTaskIds(req.body);
+  if (!parsed.ok) {
+    return res.status(400).json({ error: parsed.error });
+  }
+
+  try {
+    const body = await completeGoogleTasks(req.headers.authorization, parsed.taskIds);
     return res.status(200).json(body);
   } catch (err) {
     return sendError(res, err);

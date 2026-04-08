@@ -135,7 +135,17 @@ export async function runAgent(
             ? lastMessage.content.trim()
             : "(No response generated)";
 
-    const tools_used = result.messages.flatMap((message) => {
+    // Only count tools invoked after the latest user message (this request).
+    const lastHumanMessageIndex = result.messages
+        .map((message) => message.getType())
+        .lastIndexOf("human");
+
+    const currentTurnMessages =
+        lastHumanMessageIndex >= 0
+            ? result.messages.slice(lastHumanMessageIndex + 1)
+            : result.messages;
+
+    const tools_used = currentTurnMessages.flatMap((message) => {
         if ("tool_calls" in message && Array.isArray(message.tool_calls)) {
             return message.tool_calls
                 .map((toolCall) => toolCall?.name)

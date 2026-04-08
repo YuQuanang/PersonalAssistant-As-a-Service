@@ -1,182 +1,173 @@
 # Personal Assistant-as-a-Service (PAaaS)
 
-An event-driven microservices platform where an AI Orchestrator (powered by **Ollama** running locally) receives natural language requests and delegates tasks to three independent REST microservices.
+PAaaS is a local-first assistant platform with a React client, an Ollama-powered orchestrator, and three backend microservices (Calendar, Tasks, Email). The orchestrator converts user requests into tool calls and returns a natural-language response.
 
 ## Architecture
 
 ```
-User
- │
- ▼
-┌─────────────────────────────────┐
-│   Orchestrator  :3000           │  ← AI brain (Ollama / LLaMA 3)
-│   POST /api/chat                │
-└─────────┬───────────────────────┘
-          │  HTTP (tool calls)
-    ┌─────┼──────────┬────────────────┐
-    ▼     ▼          ▼                ▼
-┌───────┐ ┌────────┐ ┌─────────────┐ ┌──────────────┐
-│Cal    │ │Task    │ │Email        │ │(future svc)  │
-│:3001  │ │:3002   │ │:3003        │ │              │
-└───────┘ └────────┘ └─────────────┘ └──────────────┘
+Browser (React client :5173)
+          |
+          v
+Orchestrator API :3000 (LangGraph + Ollama)
+          |
+          +--> Calendar Service :3001
+          +--> Task Service     :3002
+          +--> Email Service    :3003
 ```
 
-## Directory Structure
+## Project Structure
 
 ```
 PersonalAssistant-As-a-Service/
-├── orchestrator/               # AI gateway — Ollama tool-calling agent
-│   ├── src/
-│   │   ├── index.js            # Express server entry point
-│   │   ├── agent.js            # Ollama conversation & tool loop
-│   │   ├── tools.js            # Tool definitions + HTTP dispatchers
-│   │   └── config.js           # Ports, URLs, timeouts
-│   ├── package.json
-│   └── .env.example
-│
+├── client/                      # React + Vite frontend
+├── orchestrator/                # Auth + chat orchestration + tool calling
+│   └── src/
+│       ├── index.js             # Express API (auth, chat, session endpoints)
+│       ├── graph.ts             # LangGraph agent flow
+│       ├── tools.ts             # Tool definitions (calendar/task/email)
+│       ├── prompt.md            # System prompt and tool-use rules
+│       ├── auth.js              # Google OAuth helpers
+│       └── config.js            # Env + service URLs + timeouts
 ├── services/
-│   ├── calendar-service/       # Checks availability & books meetings  :3001
-│   │   ├── src/
-│   │   │   ├── index.js
-│   │   │   └── routes/calendar.js
-│   │   └── package.json
-│   │
-│   ├── task-service/           # Fetches & creates tasks               :3002
-│   │   ├── src/
-│   │   │   ├── index.js
-│   │   │   ├── routes/tasks.js
-│   │   └── package.json
-│   │
-│   └── email-service/          # Fetches emails & generates summaries   :3003
-│       ├── src/
-│       │   ├── index.js
-│       │   └── routes/emails.js
-│       └── package.json
-│
-└── docs/
-    └── api-contracts.md        # Full JSON request/response specs
+│   ├── calendar-service/        # Calendar CRUD operations
+│   ├── task-service/            # Task list/create/delete/complete
+│   └── email-service/           # Email list and read
+└── scripts/                     # Utility scripts
 ```
 
-## Tech Stack
+## Current Tool Set
 
-| Concern        | Choice                          |
-|----------------|---------------------------------|
-| Runtime        | Node.js (ES Modules)            |
-| Framework      | Express 4                       |
-| LLM            | Ollama (local) — LLaMA 3        |
-| HTTP client    | Axios                           |
-| Storage        | Google APIs (Calendar, Tasks, Gmail) |
+- Calendar: list_calendar_events, create_calendar_event, update_calendar_event, delete_calendar_event
+- Tasks: get_tasks, create_task, delete_tasks, complete_tasks
+- Email: get_emails, read_email
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) v18 or later
-- [Ollama](https://ollama.com/) installed and available on your `PATH`
+- Node.js 18+
+- Ollama installed and available in PATH
+- Google OAuth app credentials (for sign-in and Google API access)
 
-## Running the Full System
+## Quick Start
 
-### Step 1 — Install dependencies
-
-Run this once from the repo root:
-
-```bash
-npm install && npm run install:all
-```
-
-### Step 2 — Pull the LLM model
+1. Install dependencies from repo root:
 
 ```bash
-ollama pull llama3.1
+npm install
+npm run install:all
 ```
 
-> **Swap models:** Edit `orchestrator/.env` (copy from `.env.example`) and set `OLLAMA_MODEL` to any Ollama model that supports tool calling, e.g. `llama3.2` or `mistral`.
-
-### Step 3 — Start Ollama
-
-```bash
-ollama serve
-```
-
-> Skip this if Ollama is already running as a background daemon.
-
-### Step 4 — Start all four services
-
-From the repo root, run a single command:
-
-```bash
-npm start
-```
-
-All four services start together in one terminal with color-coded, prefixed logs:
-
-```
-[calendar]     Running on http://localhost:3001
-[task]         Running on http://localhost:3002
-[email]        Running on http://localhost:3003
-[orchestrator] Running on http://localhost:3000
-[orchestrator] Chat UI → http://localhost:3000
-```
-
-> If any service crashes, all others are stopped automatically (`--kill-others-on-fail`).
-
-
-Example questions to try:
-
-| Question | Tools invoked |
-|---|---|
-| `"What are my pending tasks?"` | `get_tasks` |
-| `"Do I have any events for today?"` | `list_calendar_events` |
-| `"Create a calendar event called Standup on 2026-03-11 from 09:00 to 10:00"` | `create_calendar_event` |
-| `"Get calendar event abc123"` | `get_calendar_event` |
-| `"Delete calendar event abc123"` | `delete_calendar_event` |
-| `"Summarise my unread emails"` | `get_emails` → `summarize_email` |
-| `"Create a task to review the Q2 roadmap, high priority"` | `create_task` |
-| `"What are my tasks AND do I have any events for today?"` | `get_tasks` + `list_calendar_events` (parallel) |
-
-### Configuration
-
-All orchestrator settings can be overridden via environment variables. Copy the example file and edit as needed:
+2. Create orchestrator env file:
 
 ```bash
 cp orchestrator/.env.example orchestrator/.env
 ```
 
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `3000` | Orchestrator listen port |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
-| `OLLAMA_MODEL` | `llama3.1` | Model name (must support tool calling) |
-| `OLLAMA_TIMEOUT_MS` | `120000` | Max LLM response wait time (ms) |
-| `SERVICE_TIMEOUT_MS` | `5000` | Per-request timeout for microservice calls (ms) |
-| `CALENDAR_SERVICE_URL` | `http://localhost:3001` | Calendar service base URL |
-| `TASK_SERVICE_URL` | `http://localhost:3002` | Task service base URL |
-| `EMAIL_SERVICE_URL` | `http://localhost:3003` | Email service base URL |
+3. Update required auth settings in orchestrator/.env:
 
-Task service behavior can be configured with environment variables:
+- GOOGLE_CLIENT_ID
+- GOOGLE_CLIENT_SECRET
+- GOOGLE_REDIRECT_URI (recommended: http://localhost:3000/api/auth/google/callback)
 
-| Variable | Default | Description |
-|---|---|---|
-| `GOOGLE_TASKLIST_ID` | `@default` | Google Task List ID used for read/write |
-
-Calendar service behavior can be configured with environment variables:
-
-| Variable | Default | Description |
-|---|---|---|
-| `GOOGLE_CALENDAR_ID` | `primary` | Google Calendar ID used for availability checks and bookings |
-| `CALENDAR_TIMEZONE` | `UTC` | Timezone used when creating calendar events |
-| `CALENDAR_WORK_START_HOUR` | `9` | Start hour for hourly availability slots (24-hour) |
-| `CALENDAR_WORK_END_HOUR` | `17` | End hour for hourly availability slots (24-hour, exclusive) |
-
-## Smoke Tests
+4. Pull and run Ollama model:
 
 ```bash
-# Test all three microservices (no Ollama required)
-node scripts/smoke-test.js
-
-# Test the orchestrator structure (no Ollama required)
-node scripts/orchestrator-test.js
+ollama pull llama3.1
+ollama serve
 ```
 
-## API Contracts
+5. Start full stack (backend + frontend):
 
-See [docs/api-contracts.md](docs/api-contracts.md) for full request/response payloads for all four services.
-Cloud Computing Project
+```bash
+npm start
+```
+
+Useful alternatives:
+
+```bash
+# backend services only (calendar, task, email, orchestrator)
+npm run start:backend
+
+# frontend build
+npm run build:client
+```
+
+## Runtime Ports
+
+- Client UI: http://localhost:5173
+- Orchestrator: http://localhost:3000
+- Calendar Service: http://localhost:3001
+- Task Service: http://localhost:3002
+- Email Service: http://localhost:3003
+
+## API Overview
+
+### Orchestrator (:3000)
+
+- GET /health
+- POST /api/chat
+- POST /api/chat/session/end
+- GET /api/auth/google
+- GET /api/auth/google/switch
+- GET /api/auth/google/callback
+- GET /api/auth/status
+- GET /api/auth/profile
+- POST /api/auth/logout
+
+### Calendar Service (:3001)
+
+- GET /health
+- GET /api/events?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+- POST /api/events
+- PUT /api/events/:eventId
+- DELETE /api/events  (body: { eventIds: string[] })
+
+### Task Service (:3002)
+
+- GET /health
+- GET /api/tasks?status=pending|completed|all
+- POST /api/tasks
+- DELETE /api/tasks  (body: { task_ids: string[] })
+- PATCH /api/tasks/complete  (body: { task_ids: string[] })
+
+### Email Service (:3003)
+
+- GET /health
+- GET /api/emails?filter=unread|read|all
+- GET /api/emails/:emailId
+
+## Example Prompts
+
+- What are my pending tasks?
+- Mark the task "Submit expenses" as complete.
+- Do I have any events this week?
+- Create a calendar event tomorrow from 14:00 to 15:00 called Team Sync.
+- Show my unread emails.
+- Summarize the first unread email.
+
+## Configuration
+
+Main orchestrator env vars:
+
+- PORT (default: 3000)
+- OLLAMA_BASE_URL (default: http://localhost:11434)
+- OLLAMA_MODEL (default in code: llama3.1)
+- OLLAMA_TIMEOUT_MS (default: 120000)
+- SERVICE_TIMEOUT_MS (default: 5000)
+- EMAIL_TOOL_TIMEOUT_MS (default: 15000)
+- CALENDAR_SERVICE_URL (default: http://localhost:3001)
+- TASK_SERVICE_URL (default: http://localhost:3002)
+- EMAIL_SERVICE_URL (default: http://localhost:3003)
+- GOOGLE_CLIENT_ID
+- GOOGLE_CLIENT_SECRET
+- GOOGLE_REDIRECT_URI
+- FRONTEND_ORIGIN (optional)
+- ALLOWED_FRONTEND_ORIGINS (optional, comma-separated)
+
+Service-specific env vars:
+
+- GOOGLE_CALENDAR_ID (default: primary)
+- CALENDAR_TIMEZONE (default: Asia/Singapore)
+- CALENDAR_TIMEZONE_OFFSET (default: +08:00)
+- CALENDAR_TIMEZONE_LABEL (default: GMT+8)
+- CALENDAR_LIST_MAX_RESULTS (default: 250)
+- GOOGLE_TASKLIST_ID (default: @default)

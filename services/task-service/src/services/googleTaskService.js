@@ -88,3 +88,37 @@ export async function deleteGoogleTasks(authHeader, taskIds) {
     not_found_ids,
   };
 }
+
+export async function completeGoogleTasks(authHeader, taskIds) {
+  const tasksClient = getTasksClient(authHeader);
+  const completedTasks = [];
+  const not_found_ids = [];
+
+  for (const taskId of taskIds) {
+    try {
+      const { data } = await tasksClient.tasks.patch({
+        tasklist: GOOGLE_TASKLIST_ID,
+        task: taskId,
+        requestBody: {
+          status: "completed",
+          completed: new Date().toISOString(),
+        },
+      });
+      completedTasks.push(mapGoogleTaskToPaaS(data));
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status === 404) {
+        not_found_ids.push(taskId);
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  return {
+    completed_count: completedTasks.length,
+    completed_ids: completedTasks.map((task) => task.id),
+    not_found_ids,
+    tasks: completedTasks,
+  };
+}
