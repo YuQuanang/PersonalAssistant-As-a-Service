@@ -16,6 +16,14 @@ async function getAuthHeaders(credentials: unknown) {
 }
 
 // Helper Functions
+function getThisWeekRange(): { start: string; end: string } {
+    const todayIso = getCurrentDateInCalendarOffset();
+    // Shift so Mon=0 … Sun=6
+    const dow = (new Date().getUTCDay() + 6) % 7;
+    const end = addDaysToIsoDate(todayIso, 6 - dow); // this Sunday
+    return { start: todayIso, end };
+}
+
 function getNextWeekRange(): { start: string; end: string } {
     const todayIso = getCurrentDateInCalendarOffset();
     // Shift so Mon=0 … Sun=6
@@ -31,6 +39,7 @@ function normalizeDate(value: string | null | undefined): string | null {
     const today = getCurrentDateInCalendarOffset();
     if (v === "today") return today;
     if (v === "tomorrow") return addDaysToIsoDate(today, 1);
+    if (v === "this week") return getThisWeekRange().start;
     if (v === "next week") return getNextWeekRange().start;
     return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
 }
@@ -40,10 +49,18 @@ export const listCalendarEventsTool = tool(
     async ({ start_date, end_date }, config: RunnableConfig) => {
         const credentials = config.configurable?.credentials;
         const authConfig = await getAuthHeaders(credentials);
-        // Resolve "next week" literal before building params
+        // Resolve week literals before building params
         let resolvedStart = start_date;
         let resolvedEnd = end_date;
-        if (start_date?.toLowerCase() === "next week" || end_date?.toLowerCase() === "next week") {
+
+        const startLower = start_date?.toLowerCase();
+        const endLower = end_date?.toLowerCase();
+
+        if (startLower === "this week" || endLower === "this week") {
+            const range = getThisWeekRange();
+            resolvedStart = range.start;
+            resolvedEnd = range.end;
+        } else if (startLower === "next week" || endLower === "next week") {
             const range = getNextWeekRange();
             resolvedStart = range.start;
             resolvedEnd = range.end;
@@ -58,9 +75,9 @@ export const listCalendarEventsTool = tool(
     },
     {
         name: "list_calendar_events",
-        description: 'List calendar events for a date or range. Pass start_date as the literal "next week" to get next week\'s events.',
+        description: 'List calendar events for a date or range. Pass start_date as the literal "this week" or "next week" to get a whole week of events.',
         schema: z.object({
-            start_date: z.string().optional().describe('YYYY-MM-DD, "today", "tomorrow", or "next week".'),
+            start_date: z.string().optional().describe('YYYY-MM-DD, "today", "tomorrow", "this week", or "next week".'),
             end_date: z.string().optional().describe("YYYY-MM-DD end of range."),
         }),
     }
@@ -98,6 +115,39 @@ export const createCalendarEventTool = tool(
     }
 );
 
+export const updateCalendarEventTool = tool(
+    async ({ event_id, title, date, start, end, description = "", location = "" }, config: RunnableConfig) => {
+        const credentials = config.configurable?.credentials;
+        const authConfig = await getAuthHeaders(credentials);
+        const { data } = await http.put(
+            `${SERVICES.calendar}/api/events/${encodeURIComponent(event_id)}`,
+            {
+                title: stripMarkdown(title),
+                date: stripMarkdown(date),
+                start: stripMarkdown(start),
+                end: stripMarkdown(end),
+                description: stripMarkdown(description),
+                location: stripMarkdown(location),
+            },
+            authConfig
+        );
+        return JSON.stringify(data);
+    },
+    {
+        name: "update_calendar_event",
+        description: "Update an existing calendar event. You must provide all fields. start must be earlier than end.",
+        schema: z.object({
+            event_id: z.string().describe("The calendar event ID to update."),
+            title: z.string().describe("Event title."),
+            date: z.string().describe("Event date in YYYY-MM-DD format."),
+            start: z.string().describe("Start time in HH:MM (24-hour). Must be earlier than end."),
+            end: z.string().describe("End time in HH:MM (24-hour). Must be later than start."),
+            description: z.string().optional().describe("Optional event details."),
+            location: z.string().optional().describe("Optional location."),
+        }),
+    }
+);
+
 export const deleteCalendarEventTool = tool(
     async ({ event_ids }, config: RunnableConfig) => {
         const credentials = config.configurable?.credentials;
@@ -105,7 +155,7 @@ export const deleteCalendarEventTool = tool(
         const { data } = await http.delete(
             `${SERVICES.calendar}/api/events`, {
             ...authConfig,
-            data: { event_ids }
+            data: { eventIds: event_ids }
         }
         );
         return JSON.stringify(data);
@@ -226,6 +276,7 @@ export const readEmailTool = tool(
 export const TOOLS = [
     listCalendarEventsTool,
     createCalendarEventTool,
+    updateCalendarEventTool,
     deleteCalendarEventTool,
     getTasksTool,
     createTaskTool,

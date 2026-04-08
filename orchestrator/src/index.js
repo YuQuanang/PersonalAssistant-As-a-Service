@@ -292,13 +292,14 @@ function generateSuggestions(toolsUsed = []) {
     suggestions.add("Show all my pending tasks");
     suggestions.add("Create a calendar event");
   }
-  if (used.has("create_calendar_event")) {
-    suggestions.add("Get that calendar event");
+  if (used.has("create_calendar_event") || used.has("update_calendar_event")) {
+    suggestions.add("Show my events for the rest of the week");
     suggestions.add("What are my pending tasks?");
     suggestions.add("Show my unread emails");
   }
   if (used.has("list_calendar_events")) {
     suggestions.add("Create a calendar event for today");
+    suggestions.add("Update the meeting time");
     suggestions.add("What are my pending tasks?");
   }
   if (used.has("get_calendar_event")) {
