@@ -94,7 +94,11 @@ export async function handleGetEmail(req, res) {
     const from = headers.find((h) => h.name === "From")?.value || "Unknown Sender";
     const dateHeader = headers.find((h) => h.name === "Date")?.value || null;
     const receivedAt = msgRes.data.internalDate
-      ? new Date(Number(msgRes.data.internalDate)).toISOString()
+      ? new Date(Number(msgRes.data.internalDate)).toLocaleString("en-US", {
+          timeZone: process.env.CALENDAR_TIMEZONE ?? "Asia/Singapore",
+          dateStyle: "full",
+          timeStyle: "short",
+        })
       : null;
 
     let emailBodyText = "";

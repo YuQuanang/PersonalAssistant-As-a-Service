@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 const llm = new ChatOllama({
     model: OLLAMA.model,
     temperature: 0.1,
+    think: false
 }).bindTools(TOOLS);
 
 const TOOL_NAMES = new Set(TOOLS.map((tool) => tool.name));

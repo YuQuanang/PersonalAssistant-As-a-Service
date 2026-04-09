@@ -10,7 +10,10 @@ app.use(express.json());
 app.get("/health", (_req, res) => res.json({ service: "task-service", status: "ok" }));
 
 app.use((req, res, next) => {
-  console.log(`[req] ${req.method} ${req.originalUrl}`);
+  console.log(`[task-service] ${req.method} ${req.originalUrl}`);
+  if (req.method != "GET") {
+    console.log(`[task-service] ${JSON.stringify(req.body)}`);
+  }
   next();
 });
 

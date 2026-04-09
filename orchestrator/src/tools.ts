@@ -182,10 +182,10 @@ export const getTasksTool = tool(
     },
     {
         name: "get_tasks",
-        description: 'Fetch tasks. Use "pending", "completed", or "all".',
+        description: 'Fetch tasks. Default to "pending" unless the user explicitly asks for completed or all tasks.',
         schema: z.object({
             status: z.enum(["pending", "completed", "all"]).optional()
-                .describe('Filter by status. Defaults to "pending".'),
+                .describe('Filter by status. Use "pending" for any generic task query (e.g. "do I have any tasks"). Only use "completed" or "all" if the user explicitly requests it.'),
         }),
     }
 );
