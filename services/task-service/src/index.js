@@ -9,6 +9,14 @@ app.use(express.json());
 // Health check
 app.get("/health", (_req, res) => res.json({ service: "task-service", status: "ok" }));
 
+app.use((req, res, next) => {
+  console.log(`[task-service] ${req.method} ${req.originalUrl}`);
+  if (req.method != "GET") {
+    console.log(`[task-service] ${JSON.stringify(req.body)}`);
+  }
+  next();
+});
+
 app.use("/api/tasks", tasksRouter);
 
 // 404 catch-all

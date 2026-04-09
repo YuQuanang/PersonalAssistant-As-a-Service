@@ -2,7 +2,7 @@ import express from "express";
 import cookieParser from "cookie-parser";
 import { exec } from "node:child_process";
 import { PORT } from "./config.js";
-import { runAgent, endSession } from "./agent.js";
+import { runAgent, endSession } from "./graph.js";
 import {
   getAuthUrl,
   exchangeCodeForTokens,
@@ -180,7 +180,7 @@ app.get("/api/auth/google/callback", async (req, res) => {
   try {
     const tokens = await exchangeCodeForTokens(code);
     const cookieOptions = buildAuthCookieOptions(req);
-    
+
     // Store the tokens securely in a server-only cookie
     res.cookie("google_auth_tokens", JSON.stringify(tokens), cookieOptions);
 
@@ -273,24 +273,6 @@ app.post("/api/chat/session/end", (req, res) => {
   return res.status(200).json({ cleared });
 });
 
-// ── POST /api/shutdown ────────────────────────────────────────────────────────
-// Stops Ollama (works for both manual `ollama serve` and the macOS menu bar app)
-// then exits the orchestrator process, which signals concurrently to stop the
-// other three services.
-app.post("/api/shutdown", (_req, res) => {
-  res.json({ message: "Shutting down…" });
-  console.log("[orchestrator] Shutdown requested — stopping Ollama and all services.");
-  // Two Ollama processes run on macOS:
-  //  1. The menu bar GUI app:  /Applications/Ollama.app/Contents/MacOS/Ollama
-  //  2. The backend server:    .../Resources/ollama serve
-  // We kill both by matching the app bundle path, then fall back to pkill.
-  exec(
-    "pkill -f '/Applications/Ollama.app' 2>/dev/null; osascript -e 'quit app \"Ollama\"' 2>/dev/null; true",
-    () => {
-      // Give the HTTP response a moment to flush before exiting.
-      setTimeout(() => process.exit(0), 300);
-    });
-});
 
 // ── 404 catch-all ─────────────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: "Route not found." }));
@@ -304,30 +286,44 @@ function generateSuggestions(toolsUsed = []) {
   if (used.has("get_tasks")) {
     suggestions.add("Create a new task");
     suggestions.add("Show my completed tasks");
-    suggestions.add("Do I have free time today?");
+    suggestions.add("Create a calendar event for today");
   }
   if (used.has("create_task")) {
     suggestions.add("Show all my pending tasks");
-    suggestions.add("Check my calendar availability today");
+    suggestions.add("Create a calendar event");
   }
-  if (used.has("check_calendar_availability")) {
-    suggestions.add("Book a meeting in one of those slots");
+  if (used.has("complete_tasks")) {
+    suggestions.add("Show my pending tasks");
+    suggestions.add("Show my completed tasks");
+    suggestions.add("Create a calendar event");
+  }
+  if (used.has("create_calendar_event") || used.has("update_calendar_event")) {
+    suggestions.add("Show my events for the rest of the week");
     suggestions.add("What are my pending tasks?");
     suggestions.add("Show my unread emails");
   }
-  if (used.has("book_meeting")) {
-    suggestions.add("Check availability for another day");
+  if (used.has("list_calendar_events")) {
+    suggestions.add("Create a calendar event for today");
+    suggestions.add("Update the meeting time");
+    suggestions.add("What are my pending tasks?");
+  }
+  if (used.has("get_calendar_event")) {
+    suggestions.add("Delete that calendar event");
+    suggestions.add("Show my pending tasks");
+  }
+  if (used.has("delete_calendar_event")) {
+    suggestions.add("Create another calendar event");
     suggestions.add("Show my pending tasks");
   }
   if (used.has("get_emails")) {
     suggestions.add("Summarise the first email");
     suggestions.add("What are my pending tasks?");
-    suggestions.add("Do I have any free time today?");
+    suggestions.add("Create a calendar event today");
   }
-  if (used.has("summarize_email")) {
+  if (used.has("read_email")) {
     suggestions.add("Create a task from this email");
     suggestions.add("Show my other unread emails");
-    suggestions.add("Check my calendar availability");
+    suggestions.add("Create a calendar event");
   }
 
   // Fallback when no tools were used (e.g. small talk / greeting)

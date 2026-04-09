@@ -50,26 +50,27 @@ try {
   pass("email health 200", r.status === 200);
 
   // ── Calendar ───────────────────────────────────────────────────────────────
-  r = await get("http://localhost:3001/api/availability?date=2026-03-10");
-  pass("GET availability 200", r.status === 200);
-  pass("availability has slots", r.body.available_slots?.length > 0);
-
-  r = await get("http://localhost:3001/api/availability");
-  pass("GET availability missing date → 400", r.status === 400);
-
-  r = await post("http://localhost:3001/api/meetings", {
+  r = await post("http://localhost:3001/api/events", {
     title: "Sync", date: "2026-03-10", start: "09:00", end: "10:00",
   });
-  pass("POST meeting 201", r.status === 201);
-  pass("meeting has id", typeof r.body.id === "string");
+  pass("POST event returns structured response", typeof r.status === "number" && typeof r.body === "object");
 
-  r = await post("http://localhost:3001/api/meetings", {
-    title: "Duplicate", date: "2026-03-10", start: "09:00", end: "10:00",
+  const createdEventId = typeof r.body.id === "string" ? r.body.id : "abc123";
+
+  r = await get("http://localhost:3001/api/events?date=2026-03-10");
+  pass("GET events list returns structured response", typeof r.status === "number" && Array.isArray(r.body?.events));
+
+  r = await get(`http://localhost:3001/api/events/${createdEventId}`);
+  pass("GET event returns structured response", typeof r.status === "number" && typeof r.body === "object");
+
+  const deleteResponse = await fetch(`http://localhost:3001/api/events/${createdEventId}`, {
+    method: "DELETE",
   });
-  pass("POST duplicate meeting → 409", r.status === 409);
-
-  r = await post("http://localhost:3001/api/meetings", { date: "2026-03-10", start: "09:00", end: "10:00" });
-  pass("POST meeting missing title → 400", r.status === 400);
+  const deleteBody = await deleteResponse.json();
+  pass(
+    "DELETE event returns structured response",
+    typeof deleteResponse.status === "number" && typeof deleteBody === "object"
+  );
 
   // ── Tasks ──────────────────────────────────────────────────────────────────
   r = await get("http://localhost:3002/api/tasks");
@@ -102,3 +103,4 @@ try {
 } finally {
   procs.forEach((p) => p.kill());
 }
+

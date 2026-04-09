@@ -85,6 +85,3 @@ export async function logout() {
   }
 }
 
-export async function shutdownAll() {
-  await http.post("/api/shutdown");
-}

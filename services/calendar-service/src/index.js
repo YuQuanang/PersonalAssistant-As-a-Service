@@ -6,6 +6,15 @@ const PORT = 3001;
 
 app.use(express.json());
 
+// Request logger
+app.use((req, res, next) => {
+  console.log(`[calendar-service] ${req.method} ${req.url}`);
+  if (req.method !== "GET" && req.body && Object.keys(req.body).length > 0) {
+    console.log(`[calendar-service] body:`, JSON.stringify(req.body));
+  }
+  next();
+});
+
 // Health check
 app.get("/health", (_req, res) => res.json({ service: "calendar-service", status: "ok" }));
 

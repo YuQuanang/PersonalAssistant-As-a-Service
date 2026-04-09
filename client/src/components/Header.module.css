@@ -161,17 +161,3 @@
   background: #242f45;
 }
 
-.shutdownBtn {
-  background: transparent;
-  border: 1px solid #3d1f2a;
-  border-radius: 8px;
-  color: #64748b;
-  cursor: pointer;
-  font-size: 0.75rem;
-  padding: 4px 10px;
-}
-
-.shutdownBtn:hover {
-  border-color: #f87171;
-  color: #f87171;
-}
